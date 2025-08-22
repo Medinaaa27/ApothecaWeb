@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apotheca Admin Login</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="apotheca_icon.png"/>
+</head>
+<body>
+  <div class="container">
+    <div class="login-container">
+      <h1>Apotheca Admin Login</h1>
+      <div class="login-form">
+        <div class="form-group">
+          <label for="username">Username:</label>
+          <input type="text" id="username" placeholder="Enter username" />
+        </div>
+        <div class="form-group">
+          <label for="password">Password:</label>
+          <input type="password" id="password" placeholder="Enter password" />
+        </div>
+        <div class="form-buttons">
+          <button onclick="login()">Login</button>
+        </div>
+        <div id="login-error" class="error-message" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="login.js" type="module"></script>
+</body>
+</html>
+
