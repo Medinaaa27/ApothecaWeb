@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Appointments Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="apotheca_icon.png"/>
+</head>
+<body>
+  <div class="container">
+    <div id="loading-bar"></div>
+
+    <!-- Header with Logout -->
+    <div class="header-container">
+      <div>
+        <h1 id="clinic-name">Mod Dental Clinic</h1>
+        <h2>Apotheca Appointment management</h2>
+      </div>
+      <div>
+        <span id="user-info" style="margin-right: 15px; color: #6c757d;"></span>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+      </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tabs">
+      <button onclick="showPage('requests')">Requests</button>
+      <button onclick="showPage('accommodated')">Accommodated</button>
+      <button onclick="showPage('details')">Patients</button>
+      <button onclick="showPage('doctors')">Doctors</button>
+      <button onclick="showPage('calendar')">Calendar</button>
+      <button onclick="showPage('reports')">Reports</button>
+    </div>
+
+    <!-- Requests Page -->
+    <div id="requests" class="page">
+      <div class="appointments-header">
+        <h2>Requested Appointments</h2>
+        <button id="sort-toggle">Sort: Newest</button>
+      </div>
+      <div id="appointments-list" class="appointments-list"></div>
+    </div>
+
+    <!-- Accommodated Page -->  
+    <div id="accommodated" class="page">
+      <div class="appointments-header">   
+        <h2>Accommodated Appointments</h2>
+        <button id="accom-sort-toggle" onclick="toggleSortAccom()">Sort: Newest</button>
+      </div>
+      <div id="accommodated-list" class="appointments-list"></div>
+    </div>
+
+    <!-- Details Page -->
+    <div id="details" class="page">
+      <h2 id="details-title">Patient Details</h2>
+      <div id="details-content"></div>
+
+      <!-- This section will be hidden when viewing a specific patient -->
+      <div id="patient-list-section">
+        <div class="details-header">
+          <h3>List of Patients</h3>
+          <div class="filter-container">
+            <div class="filter-row">
+              <div class="filter-group">
+                <label for="patient-search">Search by Name:</label>
+                <input
+                  type="text"
+                  id="patient-search"
+                  placeholder="Search patient name"
+                />
+              </div>
+              <div class="filter-group">
+                <label for="patient-status-filter">Status:</label>
+                <select id="patient-status-filter">
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="patient-date-filter">Date:</label>
+                <input type="date" id="patient-date-filter" />
+              </div>
+            </div>
+            <div class="filter-row">
+              <div class="filter-group">
+                <label for="patient-doctor-filter">Doctor:</label>
+                <select id="patient-doctor-filter">
+                  <option value="">All Doctors</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="patient-gender-filter">Gender:</label>
+                <select id="patient-gender-filter">
+                  <option value="">All Genders</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <button onclick="applyPatientFilters()" style="margin-top: 20px;">Apply Filters</button>
+                <button onclick="clearPatientFilters()" style="margin-top: 20px; background-color: #6c757d;">Clear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="completed-list"></div>
+      </div>
+    </div>
+
+    <!-- Doctors Page -->
+    <div id="doctors" class="page">
+      <div class="appointments-header">
+        <h2>Doctors Management</h2>
+        <button id="add-doctor-btn" onclick="showAddDoctorForm()">Add New Doctor</button>
+      </div>
+      
+      <!-- Add Doctor Form -->
+      <div id="add-doctor-form" class="add-doctor-form" style="display: none;">
+        <h3>Add New Doctor</h3>
+        <div class="form-group">
+          <label for="doctor-name">Doctor Name:</label>
+          <input type="text" id="doctor-name" placeholder="Enter doctor's full name" />
+        </div>
+        <div class="form-group">
+          <label for="doctor-specialization">Specialization:</label>
+          <select id="doctor-specialization">
+            <option value="">Select specialization</option>
+          </select>
+        </div>
+        
+        <div class="form-buttons">
+          <button onclick="addDoctor()">Add Doctor</button>
+          <button onclick="hideAddDoctorForm()">Cancel</button>
+        </div>
+      </div>
+      
+      <!-- Edit Doctor Form -->
+      <div id="edit-doctor-form" class="add-doctor-form" style="display: none;">
+        <h3>Edit Doctor Information</h3>
+        <div class="form-group">
+          <label for="edit-doctor-name">Doctor Name:</label>
+          <input type="text" id="edit-doctor-name" placeholder="Enter doctor's full name" />
+        </div>
+        <div class="form-group">
+          <label for="edit-doctor-specialization">Specialization:</label>
+          <select id="edit-doctor-specialization">
+            <option value="">Select specialization</option>
+          </select>
+        </div>
+        
+        <div class="form-buttons">
+          <button onclick="saveDoctorEdit()">Save Changes</button>
+          <button onclick="cancelDoctorEdit()">Cancel</button>
+        </div>
+      </div>
+      
+      <div id="doctors-list" class="doctors-list"></div>
+    </div>
+
+    <!-- Calendar Page -->
+    <div id="calendar" class="page">
+      <div class="appointments-header">
+        <h2>Appointment Calendar</h2>
+        <div>
+          <select id="calendar-doctor-filter">
+            <option value="">All Doctors</option>
+          </select>
+        </div>
+      </div>
+      <div class="calendar-container">
+        <div class="calendar-header">
+          <h3 id="calendar-month-year">January 2024</h3>
+          <div class="calendar-nav">
+            <button onclick="previousMonth()">← Previous</button>
+            <button onclick="today()">Today</button>
+            <button onclick="nextMonth()">Next →</button>
+          </div>
+        </div>
+        <div id="calendar-grid" class="calendar-grid"></div>
+      </div>
+    </div>
+
+    <!-- Reports Page -->
+    <div id="reports" class="page">
+      <div class="appointments-header">
+        <h2>Reports & Statistics</h2>
+        <div>
+          <input type="date" id="report-date" />
+          <select id="report-doctor-filter">
+            <option value="">All Doctors</option>
+          </select>
+          <button onclick="generateReport()">Generate Report</button>
+        </div>
+      </div>
+      
+      <!-- Daily Statistics -->
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Daily Statistics</h3>
+          <span id="report-date-display">Today</span>
+        </div>
+        <div id="daily-stats" class="report-stats">
+          <!-- Stats will be populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Doctor Reports -->
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Doctor Performance</h3>
+          <button onclick="exportReport()">Export Report</button>
+        </div>
+        <div id="doctor-reports">
+          <!-- Doctor reports will be populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Doctor Schedule Window -->
+  <div id="doctor-schedule-overlay" class="schedule-overlay" style="display: none;"></div>
+  <div id="doctor-schedule-window" class="schedule-window" style="display: none;">
+    <div class="schedule-header">
+      <h3 id="doctor-schedule-title">Doctor Schedule</h3>
+      <button class="close-btn" onclick="hideDoctorSchedule()">×</button>
+    </div>
+    
+    <div class="schedule-calendar-container">
+      <div class="schedule-calendar-header">
+        <h4 id="doctor-schedule-month-year">January 2024</h4>
+        <div class="schedule-calendar-nav">
+          <button onclick="previousScheduleMonth()">← Previous</button>
+          <button onclick="todaySchedule()">Today</button>
+          <button onclick="nextScheduleMonth()">Next →</button>
+        </div>
+      </div>
+      <div id="doctor-schedule-grid" class="schedule-calendar-grid"></div>
+    </div>
+  </div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

@@ -555,9 +555,10 @@ async function managePatient(app) {
       <div class="column">
         <h3>Prescription</h3>
         <label>Medicine Name(s)</label>
-        <input type="text" id="presc-name" placeholder="Enter medicine name" /> 
+        <input type="text" id="presc-name" placeholder="Enter medicine(s) name" /> 
         <label>Prescription Details</label>
-        <input type="text" id="presc-details" placeholder="Enter prescription details, dosage, instructions, etc." />
+        <textarea id="presc-details" placeholder="Enter prescription details, dosage, instructions, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
+        <button onclick="savePrescriptionOnly()" style="margin-top: 10px; padding: 8px 16px; background-color: #9534db; color: white; border: none; border-radius: 4px; cursor: pointer;">Save Prescription</button>
       </div>
       <div class="column">
         <h3>Billing</h3>
@@ -590,6 +591,9 @@ async function managePatient(app) {
 
 
   showPage('details', { manageMode: true });
+  
+  // Load existing clinical notes
+  await loadClinicalNotes();
 }
 
 // Submit Management
@@ -1738,19 +1742,106 @@ window.clearPatientFilters = function() {
 };
 
 // Clinical Notes Functions
-window.addClinicalNote = function() {
+window.addClinicalNote = async function() {
   const note = prompt('Enter clinical note:');
   if (note && note.trim()) {
-    const notesList = document.getElementById('clinical-notes-list');
-    const noteItem = document.createElement('div');
-    noteItem.className = 'note-item';
-    noteItem.innerHTML = `
-      <div class="note-date">${new Date().toLocaleString()}</div>
-      <div class="note-content">${note}</div>
-    `;
-    notesList.appendChild(noteItem);
+    try {
+      // Get the current patient and doctor information
+      const patientId = selectedAppointment.user_id;
+      const doctorName = selectedAppointment.subtitle;
+      
+      // Resolve doctor_id by matching the appointment's doctor name within this clinic
+      let doctorId = null;
+      if (doctorName) {
+        const { data: doctorRows } = await supabase
+          .from('doctors')
+          .select('id')
+          .eq('clinic_id', clinicId)
+          .eq('name', doctorName)
+          .limit(1);
+        if (doctorRows && doctorRows.length > 0) {
+          doctorId = doctorRows[0].id;
+        }
+      }
+      
+      // Save note to database
+      const { error } = await supabase
+        .from('doctor_notes')
+        .insert([{
+          patient_id: patientId,
+          content: note,
+          doctor_id: doctorId,
+          clinic_id: clinicId
+        }]);
+      
+      if (error) {
+        alert('Failed to save note to database.');
+        console.error(error);
+        return;
+      }
+      
+      // Reload notes to show the new one
+      await loadClinicalNotes();
+      
+      alert('Note saved successfully!');
+    } catch (error) {
+      alert('Error saving note. Please try again.');
+      console.error(error);
+    }
   }
 };
+
+// Load clinical notes from database
+async function loadClinicalNotes() {
+  if (!selectedAppointment) return;
+  
+  try {
+    const notesList = document.getElementById('clinical-notes-list');
+    if (!notesList) return;
+    
+    // Get notes for this patient
+    const { data: notes, error } = await supabase
+      .from('doctor_notes')
+      .select(`
+        *,
+        doctors(name)
+      `)
+      .eq('patient_id', selectedAppointment.user_id)
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading notes:', error);
+      notesList.innerHTML = '<p>Error loading notes.</p>';
+      return;
+    }
+    
+    if (!notes || notes.length === 0) {
+      notesList.innerHTML = '<p style="text-align: center; color: #6c757d; font-style: italic;">No clinical notes yet.</p>';
+      return;
+    }
+    
+    // Clear and populate notes
+    notesList.innerHTML = '';
+    for (const note of notes) {
+      const noteItem = document.createElement('div');
+      noteItem.className = 'note-item';
+      const doctorName = note.doctors?.name || 'Unknown Doctor';
+      const noteDate = new Date(note.created_at).toLocaleString();
+      
+      noteItem.innerHTML = `
+        <div class="note-header">
+          <div class="note-date">${noteDate}</div>
+          <div class="note-doctor">Dr. ${doctorName}</div>
+        </div>
+        <div class="note-content">${note.content}</div>
+      `;
+      notesList.appendChild(noteItem);
+    }
+  } catch (error) {
+    console.error('Error loading clinical notes:', error);
+  }
+}
 
 // Separate Prescription and Billing Functions
 window.savePrescriptionOnly = async function() {
@@ -1759,8 +1850,6 @@ window.savePrescriptionOnly = async function() {
   
   const prescName = document.getElementById('presc-name').value.trim();
   const prescDetails = document.getElementById('presc-details').value.trim();
-  const prescQuantity = document.getElementById('presc-quantity').value.trim();
-  const prescDuration = document.getElementById('presc-duration').value.trim();
   
   if (!prescName || !prescDetails) {
     alert('Please enter medicine name and details.');
@@ -1789,8 +1878,6 @@ window.savePrescriptionOnly = async function() {
     appointment_id: appointmentId,
     clinic_id: clinicId,
     doctor_id: doctorId,
-    quantity: prescQuantity || null,
-    duration: prescDuration || null,
     icon: 'pill',
     color: 'blue'
   };
@@ -1805,8 +1892,6 @@ window.savePrescriptionOnly = async function() {
     // Clear prescription fields
     document.getElementById('presc-name').value = '';
     document.getElementById('presc-details').value = '';
-    document.getElementById('presc-quantity').value = '';
-    document.getElementById('presc-duration').value = '';
   }
 };
 

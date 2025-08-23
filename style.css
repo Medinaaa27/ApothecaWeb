@@ -1,0 +1,1304 @@
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #eef2f7;
+  margin: 0;
+  padding: 20px;
+}
+
+.container {
+  max-width: 960px;
+  margin: auto;
+  background: #ffffff;
+  padding: 30px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+h1, h2 {
+  text-align: center;
+  color: #2c3e50;
+}
+
+.tabs {
+  display: flex;
+  width: 100%;
+  margin-bottom: 25px;
+}
+
+.tabs button {
+  flex: 1;
+  margin: 0;
+  border-radius: 0;
+  padding: 12px 20px;
+  background-color: #9534db;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.tabs button:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+.tabs button:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.tabs button:hover {
+  background-color: #7311b9;
+}
+
+button {
+  padding: 12px 20px;
+  margin: 5px;
+  background-color: #9534db;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #7311b9;
+}
+
+/* Sort Buttons Shared Class */
+.sort-button {
+  padding: 6px 12px;
+  background-color: #ffffff;
+  color: black;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+.sort-button:hover {
+  background-color: #efeff6;
+}
+
+#sort-toggle, #accom-sort-toggle {
+  /* Optional: in case you use ids in HTML */
+}
+
+/* Appointments Styling */
+.appointment, .patient {
+  border: 1px solid #ddd;
+  padding: 20px;
+  margin-bottom: 15px;
+  border-radius: 10px;
+  background-color: #fdfdfd;
+  transition: transform 0.2s;
+}
+
+.appointment:hover, .patient:hover {
+  transform: scale(1.01);
+  background-color: #f0f8ff;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+  margin-bottom: 20px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+}
+
+label {
+  font-weight: bold;
+  display: block;
+  margin-top: 15px;
+}
+
+.appointments-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+/* Optimize Flicker */
+#appointments-list.loading {
+  opacity: 0.5;
+  transition: opacity 0.3s;
+}
+
+/* Approve / Decline Buttons */
+.appointment button {
+  padding: 8px 16px;
+  min-width: 100px;
+  margin-right: 10px;
+  margin-top: 10px;
+  font-size: 0.95rem;
+}
+
+.appointment button:last-child {
+  margin-right: 0;
+}
+
+/* Loading Bar */
+#loading-bar {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(to right, #9534db, #7311b9);
+  border-radius: 4px;
+  margin-bottom: 20px;
+  transition: width 0.4s ease, opacity 0.4s ease;
+  opacity: 0;
+}
+
+/* Manage Layout */
+.manage-columns {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.manage-columns .column {
+  flex: 1;
+  min-width: 250px;
+}
+
+.manage-columns label {
+  display: block;
+  margin-top: 10px;
+  font-weight: bold;
+}
+
+.manage-columns input,
+.manage-columns textarea {
+  width: 100%;
+  padding: 6px;
+  margin-top: 4px;
+  box-sizing: border-box;
+}
+
+/* Taller text input for Prescription Details within its column */
+.manage-columns #presc-details {
+  height: 140px;
+}
+
+/* Completed Appointments */
+.completed-entry {
+  background: #f9f9f9;
+  margin-bottom: 1em;
+  border-radius: 6px;
+  padding: 1em;
+}
+
+/* Details Page Header and Search Bar */
+.details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.details-header h3 {
+  font-size: 1.2rem;
+  color: #2c3e50;
+  margin: 0;
+}
+
+#patient-search {
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  width: 240px;
+  background-color: #fff;
+  transition: box-shadow 0.2s ease;
+}
+
+#patient-search:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #d3c0f3;
+}
+
+/* Completed Appointment Layout (3-column grid) */
+.completed-entry {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1em;
+  background: #f9f9f9;
+  padding: 1em;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  margin-bottom: 1em;
+}
+
+.completed-entry div {
+  font-size: 0.95rem;
+}
+
+.completed-entry strong {
+  font-weight: 600;
+}
+
+/* Optional styling for paid button in billing column */
+.paid-button {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  background-color: #28a745;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.paid-button:hover {
+  background-color: #218838;
+}
+
+/* Doctors Page Styles */
+.add-doctor-form {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 30px;
+  border: 1px solid #e9ecef;
+}
+
+.add-doctor-form h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.form-row input,
+.form-row textarea {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.form-row textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.specialization-group {
+  margin-bottom: 30px;
+}
+
+.specialization-group h3 {
+  color: #9534db;
+  border-bottom: 2px solid #9534db;
+  padding-bottom: 8px;
+  margin-bottom: 15px;
+}
+
+.doctor-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 10px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.doctor-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.doctor-info {
+  flex: 1;
+}
+
+.doctor-info strong {
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.doctor-info small {
+  color: #6c757d;
+  display: block;
+  margin-top: 4px;
+}
+
+.doctor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-btn {
+  background-color: #17a2b8;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.edit-btn:hover {
+  background-color: #138496;
+}
+
+.delete-btn {
+  background-color: #dc3545;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.delete-btn:hover {
+  background-color: #c82333;
+}
+
+.add-doctor-section.add-doctor-form {
+  background: #fdfdfd;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+}
+
+.add-doctor-section label {
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.add-doctor-section input {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 10px;
+  font-size: 0.95rem;
+  border-radius: 6px;
+  transition: border-color 0.3s;
+}
+
+.add-doctor-section input:focus {
+  border-color: #9534db;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(149, 52, 219, 0.15);
+}
+
+.add-doctor-section .form-row button {
+  min-width: 100px;
+}
+
+/* Doctor Management Form Styles */
+.add-doctor-form {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.add-doctor-form h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 5px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  border-color: #9534db;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(149, 52, 219, 0.15);
+}
+
+.form-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.form-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background-color 0.3s;
+}
+
+.form-buttons button:first-child {
+  background-color: #9534db;
+  color: white;
+}
+
+.form-buttons button:first-child:hover {
+  background-color: #7311b9;
+}
+
+.form-buttons button:last-child {
+  background-color: #6c757d;
+  color: white;
+}
+
+.form-buttons button:last-child:hover {
+  background-color: #545b62;
+}
+
+/* Doctor List Styles */
+.doctor-item {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.doctor-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.doctor-info {
+  flex: 1;
+}
+
+.doctor-info strong {
+  color: #2c3e50;
+  font-size: 1.1rem;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.doctor-info small {
+  color: #6c757d;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.doctor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.doctor-actions button {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.edit-doctor-btn {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.edit-doctor-btn:hover {
+  background-color: #138496;
+}
+
+.delete-doctor-btn {
+  background-color: #dc3545;
+  color: white;
+}
+
+.delete-doctor-btn:hover {
+  background-color: #c82333;
+}
+
+/* Doctor Dropdown Styles */
+.doctor-select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background-color: white;
+  cursor: pointer;
+}
+
+.doctor-select:focus {
+  border-color: #9534db;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(149, 52, 219, 0.15);
+}
+
+/* Login Styles */
+.login-container {
+  max-width: 400px;
+  margin: 100px auto;
+  background: #ffffff;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.login-container h1 {
+  margin-bottom: 30px;
+  color: #2c3e50;
+}
+
+.login-form {
+  text-align: left;
+}
+
+.error-message {
+  color: #dc3545;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  padding: 10px;
+  border-radius: 6px;
+  margin-top: 15px;
+  text-align: center;
+}
+
+/* Header with Logout */
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.logout-btn {
+  background-color: #dc3545;
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.logout-btn:hover {
+  background-color: #c82333;
+}
+
+/* Filter Styles */
+.filter-container {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.filter-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-group label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: #2c3e50;
+}
+
+.filter-group input,
+.filter-group select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+/* Calendar Styles */
+.calendar-container {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.calendar-nav {
+  display: flex;
+  gap: 10px;
+}
+
+.calendar-nav button {
+  padding: 8px 12px;
+  background: #9534db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #ddd;
+  border: 1px solid #ddd;
+}
+
+.calendar-day {
+  background: white;
+  padding: 10px;
+  min-height: 80px;
+  position: relative;
+}
+
+.calendar-day.other-month {
+  background: #f8f9fa;
+  color: #6c757d;
+}
+
+.calendar-day.today {
+  background: #e3f2fd;
+  font-weight: bold;
+}
+
+.calendar-day.has-appointment {
+  background: #fff3cd;
+}
+
+.appointment-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  background: #9534db;
+  border-radius: 50%;
+}
+
+/* Report Styles */
+.report-container {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.report-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+  text-align: center;
+  border-left: 4px solid #9534db;
+}
+
+.stat-number {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #9534db;
+}
+
+.stat-label {
+  color: #6c757d;
+  font-size: 0.9rem;
+  margin-top: 5px;
+}
+
+/* Clinical Notes Styles */
+.clinical-notes {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 1px solid #e9ecef;
+}
+
+.notes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.notes-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.note-item {
+  background: white;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #9534db;
+}
+
+.note-date {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-bottom: 5px;
+}
+
+.note-content {
+  font-size: 0.9rem;
+}
+
+/* Doctor Schedule Window Styles */
+.schedule-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+
+.schedule-window {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  background: #9534db;
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.schedule-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.3s;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.schedule-calendar-container {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.schedule-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.schedule-calendar-header h4 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.schedule-calendar-nav {
+  display: flex;
+  gap: 10px;
+}
+
+.schedule-calendar-nav button {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  background: #f8f9fa;
+  color: #2c3e50;
+  border: 1px solid #dee2e6;
+}
+
+.schedule-calendar-nav button:hover {
+  background: #e9ecef;
+}
+
+.schedule-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.schedule-day-header {
+  background: #e9ecef;
+  padding: 10px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+  color: #495057;
+}
+
+.schedule-day {
+  background: white;
+  padding: 15px 10px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  border: 1px solid #f8f9fa;
+}
+
+.schedule-day:hover {
+  background: #f8f9fa;
+}
+
+.schedule-day.other-month {
+  background: #f8f9fa;
+  color: #adb5bd;
+}
+
+.schedule-day.today {
+  background: #fff3cd;
+  border: 2px solid #ffc107;
+}
+
+.schedule-day.has-appointment {
+  background: #d4edda;
+  border-color: #28a745;
+}
+
+.schedule-day.has-appointment:hover {
+  background: #c3e6cb;
+}
+
+.appointment-count {
+  font-size: 0.8rem;
+  color: #28a745;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+/* Doctor Actions Button Styles */
+.schedule-doctor-btn {
+  background-color: #28a745 !important;
+  margin-right: 5px;
+}
+
+.schedule-doctor-btn:hover {
+  background-color: #218838 !important;
+}
+
+.edit-doctor-btn {
+  background-color: #17a2b8 !important;
+  margin-right: 5px;
+}
+
+.edit-doctor-btn:hover {
+  background-color: #138496 !important;
+}
+
+.delete-doctor-btn {
+  background-color: #dc3545 !important;
+}
+
+.delete-doctor-btn:hover {
+  background-color: #c82333 !important;
+}
+
+/* Calendar Appointments Window Styles */
+.calendar-appointments-window {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 400px;
+}
+
+.calendar-appointments-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  background: #9534db;
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.calendar-appointments-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.calendar-appointments-content {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.calendar-appointment-item {
+  display: flex;
+  gap: 15px;
+  padding: 15px;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: #f8f9fa;
+  transition: background-color 0.2s;
+}
+
+.calendar-appointment-item:hover {
+  background: #e9ecef;
+}
+
+.appointment-time {
+  background: #9534db;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 0.9rem;
+  min-width: 80px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.appointment-details {
+  flex: 1;
+}
+
+.appointment-details strong {
+  color: #2c3e50;
+  font-size: 1rem;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.appointment-details small {
+  color: #6c757d;
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.85rem;
+}
+
+/* Make calendar days clickable */
+.calendar-day {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.calendar-day:hover {
+  background-color: #f0f8ff !important;
+}
+
+.calendar-day.has-appointment:hover {
+  background-color: #d1ecf1 !important;
+}
+
+/* Schedule Tabs */
+.schedule-tabs {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.schedule-tab {
+  flex: 1;
+  padding: 15px 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #6c757d;
+  transition: all 0.3s;
+  border-bottom: 3px solid transparent;
+}
+
+.schedule-tab:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.schedule-tab.active {
+  background: white;
+  color: #9534db;
+  border-bottom-color: #9534db;
+  font-weight: 600;
+}
+
+.schedule-tab-content {
+  display: none;
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.schedule-tab-content.active {
+  display: block;
+}
+
+/* Availability Container */
+.availability-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.availability-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.availability-header h4 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 1.3rem;
+}
+
+.availability-header p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 0.95rem;
+}
+
+/* Availability Grid */
+.availability-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr 1fr;
+  gap: 15px;
+  margin-bottom: 30px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.availability-day-header {
+  font-weight: 600;
+  color: #2c3e50;
+  padding: 10px;
+  background: #e9ecef;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.availability-day {
+  padding: 15px 10px;
+  background: white;
+  border-radius: 6px;
+  font-weight: 500;
+  color: #2c3e50;
+  display: flex;
+  align-items: center;
+  border: 1px solid #dee2e6;
+}
+
+.availability-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 10px;
+}
+
+.availability-toggle input[type="checkbox"] {
+  display: none;
+}
+
+.availability-toggle label {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+  background: #ccc;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.availability-toggle label:before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  background: white;
+  transition: transform 0.3s;
+}
+
+.availability-toggle input[type="checkbox"]:checked + label {
+  background: #9534db;
+}
+
+.availability-toggle input[type="checkbox"]:checked + label:before {
+  transform: translateX(26px);
+}
+
+.availability-time {
+  padding: 15px 10px;
+}
+
+.availability-time select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.9rem;
+  color: #2c3e50;
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+
+.availability-time select:disabled {
+  background: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.availability-time select:not(:disabled):hover {
+  border-color: #9534db;
+}
+
+.availability-time select:not(:disabled):focus {
+  outline: none;
+  border-color: #9534db;
+  box-shadow: 0 0 0 2px rgba(149, 52, 219, 0.2);
+}
+
+/* Availability Actions */
+.availability-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  padding-top: 20px;
+  border-top: 1px solid #e9ecef;
+}
+
+.save-availability-btn {
+  padding: 12px 24px;
+  background: #9534db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.save-availability-btn:hover {
+  background: #7a2bb8;
+}
+
+.cancel-availability-btn {
+  padding: 12px 24px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.cancel-availability-btn:hover {
+  background: #5a6268;
+}
