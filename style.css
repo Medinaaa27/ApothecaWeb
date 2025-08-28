@@ -800,178 +800,11 @@ label {
   font-size: 0.9rem;
 }
 
-/* Doctor Schedule Window Styles */
-.schedule-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 1000;
-}
 
-.schedule-window {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  z-index: 1001;
-  max-width: 90vw;
-  max-height: 90vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
 
-.schedule-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px;
-  background: #9534db;
-  color: white;
-  border-radius: 12px 12px 0 0;
-}
 
-.schedule-header h3 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background-color 0.3s;
-}
-
-.close-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.schedule-calendar-container {
-  padding: 20px;
-  overflow-y: auto;
-  max-height: 70vh;
-}
-
-.schedule-calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.schedule-calendar-header h4 {
-  margin: 0;
-  color: #2c3e50;
-  font-size: 1.1rem;
-}
-
-.schedule-calendar-nav {
-  display: flex;
-  gap: 10px;
-}
-
-.schedule-calendar-nav button {
-  padding: 8px 12px;
-  font-size: 0.9rem;
-  background: #f8f9fa;
-  color: #2c3e50;
-  border: 1px solid #dee2e6;
-}
-
-.schedule-calendar-nav button:hover {
-  background: #e9ecef;
-}
-
-.schedule-calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.schedule-day-header {
-  background: #e9ecef;
-  padding: 10px;
-  text-align: center;
-  font-weight: bold;
-  font-size: 0.9rem;
-  color: #495057;
-}
-
-.schedule-day {
-  background: white;
-  padding: 15px 10px;
-  text-align: center;
-  cursor: pointer;
-  position: relative;
-  min-height: 60px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s;
-  border: 1px solid #f8f9fa;
-}
-
-.schedule-day:hover {
-  background: #f8f9fa;
-}
-
-.schedule-day.other-month {
-  background: #f8f9fa;
-  color: #adb5bd;
-}
-
-.schedule-day.today {
-  background: #fff3cd;
-  border: 2px solid #ffc107;
-}
-
-.schedule-day.has-appointment {
-  background: #d4edda;
-  border-color: #28a745;
-}
-
-.schedule-day.has-appointment:hover {
-  background: #c3e6cb;
-}
-
-.appointment-count {
-  font-size: 0.8rem;
-  color: #28a745;
-  font-weight: bold;
-  margin-top: 2px;
-}
 
 /* Doctor Actions Button Styles */
-.schedule-doctor-btn {
-  background-color: #28a745 !important;
-  margin-right: 5px;
-}
-
-.schedule-doctor-btn:hover {
-  background-color: #218838 !important;
-}
 
 .edit-doctor-btn {
   background-color: #17a2b8 !important;
@@ -1090,47 +923,7 @@ label {
   background-color: #d1ecf1 !important;
 }
 
-/* Schedule Tabs */
-.schedule-tabs {
-  display: flex;
-  background: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
-}
 
-.schedule-tab {
-  flex: 1;
-  padding: 15px 20px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1rem;
-  color: #6c757d;
-  transition: all 0.3s;
-  border-bottom: 3px solid transparent;
-}
-
-.schedule-tab:hover {
-  background: #e9ecef;
-  color: #495057;
-}
-
-.schedule-tab.active {
-  background: white;
-  color: #9534db;
-  border-bottom-color: #9534db;
-  font-weight: 600;
-}
-
-.schedule-tab-content {
-  display: none;
-  padding: 20px;
-  overflow-y: auto;
-  max-height: 70vh;
-}
-
-.schedule-tab-content.active {
-  display: block;
-}
 
 /* Availability Container */
 .availability-container {
@@ -1260,6 +1053,168 @@ label {
   outline: none;
   border-color: #9534db;
   box-shadow: 0 0 0 2px rgba(149, 52, 219, 0.2);
+}
+
+/* Schedule Doctor Form Styles */
+.schedule-doctor-form {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 30px;
+  border: 1px solid #e9ecef;
+}
+
+.schedule-doctor-form h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+.schedule-calendar-container {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.schedule-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.schedule-calendar-header h4 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+}
+
+.schedule-calendar-nav {
+  display: flex;
+  gap: 10px;
+}
+
+.schedule-calendar-nav button {
+  padding: 8px 16px;
+  background: #9534db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.3s;
+}
+
+.schedule-calendar-nav button:hover {
+  background: #7a2bb8;
+}
+
+.schedule-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #dee2e6;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.schedule-day-header {
+  background: #e9ecef;
+  padding: 10px;
+  text-align: center;
+  font-weight: bold;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.schedule-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #dee2e6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.schedule-day {
+  background: white;
+  min-height: 60px;
+  padding: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  position: relative;
+  border: 1px solid #f8f9fa;
+}
+
+.schedule-day:hover {
+  background: #f8f9fa;
+}
+
+.schedule-day.selected {
+  background: #e3f2fd;
+  border-color: #2196f3;
+}
+
+.schedule-day.has-schedule {
+  background: #e8f5e8;
+  border-color: #4caf50;
+}
+
+.schedule-day.other-month {
+  background: #f8f9fa;
+  color: #adb5bd;
+}
+
+.schedule-day.today {
+  background: #fff3cd;
+  border-color: #ffc107;
+  font-weight: bold;
+}
+
+.schedule-day-number {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.schedule-day-status {
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+.schedule-time-settings {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.schedule-time-settings h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #2c3e50;
+}
+
+.time-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.time-inputs .form-group {
+  margin-bottom: 0;
+}
+
+#schedule-doctor-btn {
+  background-color: #28a745;
+  margin-left: 10px;
+}
+
+#schedule-doctor-btn:hover {
+  background-color: #218838;
 }
 
 /* Availability Actions */
