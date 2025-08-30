@@ -502,6 +502,24 @@ async function managePatient(app) {
 
   // Load specialization names for mapping
   const specializationMap = await getSpecializationMap();
+  
+  // Check if billing record already exists for this appointment
+  let existingBillingStatus = 'unpaid';
+  let existingBillingData = null;
+  try {
+    const { data: billingData } = await supabase
+      .from('billings')
+      .select('status, title, amount, due_date')
+      .eq('appointment_id', app.id)
+      .single();
+    
+    if (billingData) {
+      existingBillingStatus = billingData.status || 'unpaid';
+      existingBillingData = billingData;
+    }
+  } catch (error) {
+    console.log('No existing billing record found');
+  }
 
 
   document.getElementById('details-title').innerHTML = `
@@ -533,36 +551,22 @@ async function managePatient(app) {
       </div>
       <div class="column">
         <h3>Billing of Appointment</h3>
-        <label>Billing Title</label>
-        <input type="text" id="billing-title" value="${app.reason}" placeholder="Service description" />
-        <label>Billing Amount</label>
-        <input type="number" id="billing-amount" placeholder="Enter amount" step="0.01" />
-        <label>Due Date</label>
-        <input type="date" id="billing-due" min="${today}" />
-        <label>Payment Status</label>
-        <select id="billing-status">
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-          <option value="partial">Partial Payment</option>
-        </select>
+                 <label>Billing Title</label>
+         <input type="text" id="billing-title" value="${existingBillingData?.title || app.reason}" placeholder="Service description" onchange="updateBillingField('title')" />
+         <label>Billing Amount</label>
+         <input type="number" id="billing-amount" value="${existingBillingData?.amount || ''}" placeholder="Enter amount" step="0.01" onchange="updateBillingField('amount')" />
+         <label>Due Date</label>
+         <input type="date" id="billing-due" value="${existingBillingData?.due_date || ''}" min="${today}" onchange="updateBillingField('due_date')" />
+         <label>Payment Status</label>
+         <select id="billing-status" onchange="updateBillingStatus()">
+           <option value="unpaid" ${existingBillingStatus === 'unpaid' ? 'selected' : ''}>Unpaid</option>
+           <option value="paid" ${existingBillingStatus === 'paid' ? 'selected' : ''}>Paid</option>
+           <option value="partial" ${existingBillingStatus === 'partial' ? 'selected' : ''}>Partial Payment</option>
+         </select>
       </div>
-    </div>
-    
-      <!-- Clinical Notes Section -->
-    <div class="clinical-notes">
-      <div class="notes-header">
-        <h3>Doctor's Notes</h3>
-      </div>
-      <div class="form-group">
-        <label for="doctors-note-input">Add a note</label>
-        <textarea id="doctors-note-input" placeholder="Enter doctor's note..." rows="3" style="width: 100%; resize: vertical; min-height: 60px;"></textarea>
-      </div>
-      <div id="clinical-notes-list" class="notes-list">
-        <!-- Notes will be populated here -->
-      </div>
-    </div>
-    
-    <!-- Complete Appointment Button -->
+         </div>
+     
+     <!-- Complete Appointment Button -->
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 100;">
       <button 
         onclick="completeAppointment()" 
@@ -588,9 +592,6 @@ async function managePatient(app) {
 
 
   showPage('details', { manageMode: true });
-  
-  // Load existing clinical notes
-  await loadClinicalNotes();
 }
 
 // Complete Appointment Function
@@ -600,19 +601,18 @@ window.completeAppointment = async function() {
     return;
   }
 
-  // Check if prescription and billing are filled
-  const prescName = document.getElementById('presc-name')?.value.trim();
-  const prescDetails = document.getElementById('presc-details')?.value.trim();
-  const billingTitle = document.getElementById('billing-title')?.value.trim();
-  const billingAmount = document.getElementById('billing-amount')?.value.trim();
-  const billingDue = document.getElementById('billing-due')?.value.trim();
-  const noteContent = document.getElementById('doctors-note-input')?.value.trim();
+     // Check if prescription and billing are filled
+   const prescName = document.getElementById('presc-name')?.value.trim();
+   const prescDetails = document.getElementById('presc-details')?.value.trim();
+   const billingTitle = document.getElementById('billing-title')?.value.trim();
+   const billingAmount = document.getElementById('billing-amount')?.value.trim();
+   const billingDue = document.getElementById('billing-due')?.value.trim();
 
-  // Check if required fields are filled
-  if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent) {
-    alert("Please fill in prescription, billing, and doctor's note before completing the appointment.");
-    return;
-  }
+   // Check if required fields are filled
+   if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue) {
+     alert("Please fill in prescription and billing before completing the appointment.");
+     return;
+   }
 
   // Confirm completion
   if (!confirm('Are you sure you want to complete this appointment? This will move it to the completed appointments history.')) {
@@ -640,15 +640,7 @@ window.completeAppointment = async function() {
       }
     }
 
-    // Save doctor's note FIRST to ensure textarea content is persisted
-    const { error: noteError } = await supabase
-      .from('doctor_notes')
-      .insert([{ patient_id: userId, content: noteContent, doctor_id: doctorId, clinic_id: clinicId }]);
-    if (noteError) {
-      alert("Failed to save doctor's note. Please try again.");
-      console.error("Doctor's note insert error:", noteError);
-      return;
-    }
+    
 
     // Create prescription record
     const prescription = {
@@ -671,8 +663,7 @@ window.completeAppointment = async function() {
       status: document.getElementById('billing-status').value,
       description: `Billing for service on ${selectedAppointment.date}`,
       appointment_id: appointmentId,
-      clinic_id: clinicId,
-      doctor_id: doctorId
+      clinic_id: clinicId
     };
 
     // Update appointment status to completed
@@ -756,8 +747,7 @@ async function submitManagement() {
     status: 'unpaid',
     description: `Billing for service on ${selectedAppointment.date}`,
     appointment_id: appointmentId,
-    clinic_id: clinicId,
-    doctor_id: doctorId
+    clinic_id: clinicId
   };
 
   const [prescRes, billRes, apptRes] = await Promise.all([
@@ -1905,205 +1895,9 @@ window.clearPatientFilters = function() {
   loadCompletedAppointments();
 };
 
-// Clinical Notes Functions
-// Doctor's Notes Functions
-window.addClinicalNote = async function() {
-  // Create popup modal
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-  `;
-  
-  modal.innerHTML = `
-    <div style="
-      background: white;
-      padding: 30px;
-      border-radius: 8px;
-      width: 500px;
-      max-width: 90%;
-      max-height: 80%;
-      overflow-y: auto;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    ">
-      <h3 style="margin-top: 0; color: #333;">Add Doctor's Note</h3>
-      <textarea 
-        id="doctor-note-input" 
-        placeholder="Enter doctor's note here..."
-        style="
-          width: 100%;
-          min-height: 150px;
-          padding: 12px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          font-family: inherit;
-          font-size: 14px;
-          resize: vertical;
-          margin-bottom: 20px;
-        "
-      ></textarea>
-      <div style="text-align: right;">
-        <button 
-          onclick="closeNoteModal()" 
-          style="
-            padding: 8px 16px;
-            margin-right: 10px;
-            background: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-          "
-        >
-          Cancel
-        </button>
-        <button 
-          onclick="saveDoctorNote()" 
-          style="
-            padding: 8px 16px;
-            background: #9534db;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-          "
-        >
-          Save Note
-        </button>
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(modal);
-  
-  // Focus on textarea
-  setTimeout(() => {
-    const textarea = document.getElementById('doctor-note-input');
-    if (textarea) textarea.focus();
-  }, 100);
-};
 
-window.closeNoteModal = function() {
-  const modal = document.querySelector('div[style*="position: fixed"][style*="z-index: 1000"]');
-  if (modal) {
-    modal.remove();
-  }
-};
 
-window.saveDoctorNote = async function() {
-  const noteInput = document.getElementById('doctor-note-input');
-  const note = noteInput.value.trim();
-  
-  if (!note) {
-    alert('Please enter a note before saving.');
-    return;
-  }
-  
-  try {
-    // Get the current patient and doctor information
-    const patientId = selectedAppointment.user_id;
-    const doctorName = selectedAppointment.doctors?.name;
-    
-    // Resolve doctor_id by matching the appointment's doctor name within this clinic
-    let doctorId = null;
-    if (doctorName) {
-      const { data: doctorRows } = await supabase
-        .from('doctors')
-        .select('id')
-        .eq('clinic_id', clinicId)
-        .eq('name', doctorName)
-        .limit(1);
-      if (doctorRows && doctorRows.length > 0) {
-        doctorId = doctorRows[0].id;
-      }
-    }
-    
-    // Save note to database
-    const { error } = await supabase
-      .from('doctor_notes')
-      .insert([{
-        patient_id: patientId,
-        content: note,
-        doctor_id: doctorId,
-        clinic_id: clinicId
-      }]);
-    
-    if (error) {
-      alert('Failed to save note to database.');
-      console.error(error);
-      return;
-    }
-    
-    // Close modal and reload notes
-    closeNoteModal();
-    await loadClinicalNotes();
-    
-    alert('Doctor\'s note saved successfully!');
-  } catch (error) {
-    alert('Error saving note. Please try again.');
-    console.error(error);
-  }
-};
 
-// Load doctor's notes from database
-async function loadClinicalNotes() {
-  if (!selectedAppointment) return;
-  
-  try {
-    const notesList = document.getElementById('clinical-notes-list');
-    if (!notesList) return;
-    
-    // Get notes for this patient
-    const { data: notes, error } = await supabase
-      .from('doctor_notes')
-      .select(`
-        *,
-        doctors(name)
-      `)
-      .eq('patient_id', selectedAppointment.user_id)
-      .eq('clinic_id', clinicId)
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error loading notes:', error);
-      notesList.innerHTML = '<p>Error loading notes.</p>';
-      return;
-    }
-    
-    if (!notes || notes.length === 0) {
-      notesList.innerHTML = '<p style="text-align: center; color: #6c757d; font-style: italic;">No doctor\'s notes yet.</p>';
-      return;
-    }
-    
-    // Clear and populate notes
-    notesList.innerHTML = '';
-    for (const note of notes) {
-    const noteItem = document.createElement('div');
-    noteItem.className = 'note-item';
-      const doctorName = note.doctors?.name || 'Unknown Doctor';
-      const noteDate = new Date(note.created_at).toLocaleString();
-      
-    noteItem.innerHTML = `
-        <div class="note-header">
-          <div class="note-date">${noteDate}</div>
-          <div class="note-doctor">Dr. ${doctorName}</div>
-        </div>
-        <div class="note-content">${note.content}</div>
-    `;
-    notesList.appendChild(noteItem);
-  }
-  } catch (error) {
-    console.error('Error loading doctor\'s notes:', error);
-  }
-}
 
 // Separate Prescription and Billing Functions
 window.savePrescriptionOnly = async function() {
@@ -2194,8 +1988,7 @@ window.saveBillingOnly = async function() {
     status: billingStatus,
     description: `Billing for service on ${selectedAppointment.date}`,
     appointment_id: appointmentId,
-    clinic_id: clinicId,
-    doctor_id: doctorId
+    clinic_id: clinicId
   };
   
   const { error } = await supabase.from('billings').insert([billing]);
@@ -2252,44 +2045,97 @@ window.confirmAndApprove = confirmAndApprove;
 window.confirmAndDecline = confirmAndDecline;
 window.updateAppointmentStatus = updateAppointmentStatus;
 
-// Save doctor's note inline
-window.saveDoctorNoteInline = async function() {
+// Update billing status in database
+window.updateBillingStatus = async function() {
   if (!selectedAppointment) return;
-  const textarea = document.getElementById('doctors-note-input');
-  const content = textarea?.value.trim();
-  if (!content) {
-    alert("Please enter a note before saving.");
-    return;
-  }
-
-  // Resolve doctor_id similar to completion path
-  let doctorId = null;
-  const doctorName = selectedAppointment.doctors?.name;
-  if (doctorName) {
-    const { data: doctorRows } = await supabase
-      .from('doctors')
+  
+  const billingStatus = document.getElementById('billing-status').value;
+  if (!billingStatus) return;
+  
+  try {
+    // Find the billing record for this appointment
+    const { data: billingData, error: fetchError } = await supabase
+      .from('billings')
       .select('id')
-      .eq('clinic_id', clinicId)
-      .eq('name', doctorName)
-      .limit(1);
-    if (doctorRows && doctorRows.length > 0) doctorId = doctorRows[0].id;
+      .eq('appointment_id', selectedAppointment.id)
+      .single();
+    
+    if (fetchError) {
+      console.log('No existing billing record found for this appointment');
+      return; // No billing record exists yet, so no need to update
+    }
+    
+    if (billingData && billingData.id) {
+      // Update the billing status
+      const { error: updateError } = await supabase
+        .from('billings')
+        .update({ status: billingStatus })
+        .eq('id', billingData.id);
+      
+      if (updateError) {
+        console.error('Error updating billing status:', updateError);
+        alert('Failed to update billing status. Please try again.');
+      } else {
+        console.log('Billing status updated successfully to:', billingStatus);
+      }
+    }
+  } catch (error) {
+    console.error('Error in updateBillingStatus:', error);
   }
-
-  const { error } = await supabase
-    .from('doctor_notes')
-    .insert([{
-      patient_id: selectedAppointment.user_id,
-      content,
-      doctor_id: doctorId,
-      clinic_id: clinicId
-    }]);
-
-  if (error) {
-    alert('Failed to save note.');
-    console.error('Save note error:', error);
-    return;
-  }
-  textarea.value = '';
-  await loadClinicalNotes();
-  alert("Doctor's note saved.");
 };
+
+// Update billing field in database
+window.updateBillingField = async function(fieldName) {
+  if (!selectedAppointment) return;
+  
+  let fieldValue;
+  switch (fieldName) {
+    case 'title':
+      fieldValue = document.getElementById('billing-title').value.trim();
+      break;
+    case 'amount':
+      fieldValue = document.getElementById('billing-amount').value.trim();
+      if (fieldValue) fieldValue = parseFloat(fieldValue);
+      break;
+    case 'due_date':
+      fieldValue = document.getElementById('billing-due').value;
+      break;
+    default:
+      return;
+  }
+  
+  try {
+    // Find the billing record for this appointment
+    const { data: billingData, error: fetchError } = await supabase
+      .from('billings')
+      .select('id')
+      .eq('appointment_id', selectedAppointment.id)
+      .single();
+    
+    if (fetchError) {
+      console.log('No existing billing record found for this appointment');
+      return; // No billing record exists yet, so no need to update
+    }
+    
+    if (billingData && billingData.id) {
+      // Update the billing field
+      const updateData = {};
+      updateData[fieldName] = fieldValue;
+      
+      const { error: updateError } = await supabase
+        .from('billings')
+        .update(updateData)
+        .eq('id', billingData.id);
+      
+      if (updateError) {
+        console.error(`Error updating billing ${fieldName}:`, updateError);
+        alert(`Failed to update billing ${fieldName}. Please try again.`);
+      } else {
+        console.log(`Billing ${fieldName} updated successfully to:`, fieldValue);
+      }
+    }
+  } catch (error) {
+    console.error(`Error in updateBillingField for ${fieldName}:`, error);
+  }
+};
+
