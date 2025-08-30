@@ -396,13 +396,32 @@ async function loadPatientDetails(userId, appointments) {
   content.innerHTML = '';
   showPage('details', { manageMode: true });
 
-  const [patientRes, prescRes, billingRes] = await Promise.all([
+  // Get the auth user ID for doctor's notes query
+  let authUserId = null;
+  try {
+    const { data: patientData } = await supabase
+      .from('patients')
+      .select('user_id')
+      .eq('id', userId)
+      .single();
+    
+    if (patientData && patientData.user_id) {
+      authUserId = patientData.user_id;
+    } else {
+      authUserId = userId; // Fallback
+    }
+  } catch (error) {
+    authUserId = userId; // Fallback
+  }
+
+  const [patientRes, prescRes, billingRes, notesRes] = await Promise.all([
     supabase.from('patients').select('full_name, address').eq('id', userId).single(),
     supabase.from('prescriptions').select('*').eq('user_id', userId),
-    supabase.from('billings').select('*').eq('user_id', userId)
+    supabase.from('billings').select('*').eq('user_id', userId),
+    supabase.from('doctor_notes').select('*').eq('patient_id', authUserId)
   ]);
 
-  if (patientRes.error || prescRes.error || billingRes.error) {
+  if (patientRes.error || prescRes.error || billingRes.error || notesRes.error) {
     content.innerHTML = 'Error loading details.';
     return;
   }
@@ -410,6 +429,7 @@ async function loadPatientDetails(userId, appointments) {
   const patient = patientRes.data;
   const prescriptions = prescRes.data;
   const billings = billingRes.data;
+  const doctorNotes = notesRes.data;
 
   title.innerHTML = `
     <div style="text-align: left; font-size: 0.95rem; line-height: 1.4;">
@@ -435,11 +455,15 @@ async function loadPatientDetails(userId, appointments) {
     b.appointment_id === app.id
   );
 
+  const matchedNotes = doctorNotes.filter(n =>
+    n.appointment_id === app.id
+  );
+
 
     const div = document.createElement('div');
     div.className = 'completed-entry';
     div.style.display = 'grid';
-    div.style.gridTemplateColumns = '1fr 1fr 1fr';
+    div.style.gridTemplateColumns = '1fr 1fr 1fr 1fr';
     div.style.gap = '1em';
     div.style.marginTop = '1.5em';
 
@@ -454,6 +478,12 @@ async function loadPatientDetails(userId, appointments) {
         ${matchedPrescriptions.length
           ? matchedPrescriptions.map(p => `<div><strong>${p.name}</strong><br>${p.details}</div>`).join('<br>')
           : 'No prescription'}
+      </div>
+      <div>
+        <strong>Doctor's Notes:</strong><br><br>
+        ${matchedNotes.length
+          ? matchedNotes.map(n => `<div><strong>Clinical Notes:</strong><br>${n.content}</div>`).join('<br>')
+          : 'No doctor notes'}
       </div>
       <div>
         ${matchedBillings.length
@@ -546,25 +576,30 @@ async function managePatient(app) {
         <h3>Prescription</h3>
         <label>Medicine Name(s)</label>
         <input type="text" id="presc-name" placeholder="Enter medicine(s) name" /> 
-        <label>Prescription Details</label>
-        <textarea id="presc-details" placeholder="Enter prescription details, dosage, instructions, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
-      </div>
-      <div class="column">
-        <h3>Billing of Appointment</h3>
-                 <label>Billing Title</label>
-         <input type="text" id="billing-title" value="${existingBillingData?.title || app.reason}" placeholder="Service description" onchange="updateBillingField('title')" />
-         <label>Billing Amount</label>
-         <input type="number" id="billing-amount" value="${existingBillingData?.amount || ''}" placeholder="Enter amount" step="0.01" onchange="updateBillingField('amount')" />
-         <label>Due Date</label>
-         <input type="date" id="billing-due" value="${existingBillingData?.due_date || ''}" min="${today}" onchange="updateBillingField('due_date')" />
-         <label>Payment Status</label>
-         <select id="billing-status" onchange="updateBillingStatus()">
-           <option value="unpaid" ${existingBillingStatus === 'unpaid' ? 'selected' : ''}>Unpaid</option>
-           <option value="paid" ${existingBillingStatus === 'paid' ? 'selected' : ''}>Paid</option>
-           <option value="partial" ${existingBillingStatus === 'partial' ? 'selected' : ''}>Partial Payment</option>
-         </select>
-      </div>
-         </div>
+                 <label>Prescription Details</label>
+         <textarea id="presc-details" placeholder="Enter prescription details, dosage, instructions, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
+       </div>
+       <div class="column">
+         <h3>Doctor's Notes</h3>
+         <label>Clinical Notes</label>
+         <textarea id="doctors-note-input" placeholder="Enter doctor's notes, observations, recommendations, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
+       </div>
+       <div class="column">
+         <h3>Billing of Appointment</h3>
+                  <label>Billing Title</label>
+          <input type="text" id="billing-title" value="${existingBillingData?.title || app.reason}" placeholder="Service description" onchange="updateBillingField('title')" />
+          <label>Billing Amount</label>
+          <input type="number" id="billing-amount" value="${existingBillingData?.amount || ''}" placeholder="Enter amount" step="0.01" onchange="updateBillingField('amount')" />
+          <label>Due Date</label>
+          <input type="date" id="billing-due" value="${existingBillingData?.due_date || ''}" min="${today}" onchange="updateBillingField('due_date')" />
+          <label>Payment Status</label>
+          <select id="billing-status" onchange="updateBillingStatus()">
+            <option value="unpaid" ${existingBillingStatus === 'unpaid' ? 'selected' : ''}>Unpaid</option>
+            <option value="paid" ${existingBillingStatus === 'paid' ? 'selected' : ''}>Paid</option>
+            <option value="partial" ${existingBillingStatus === 'partial' ? 'selected' : ''}>Partial Payment</option>
+          </select>
+       </div>
+          </div>
      
      <!-- Complete Appointment Button -->
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 100;">
@@ -601,16 +636,17 @@ window.completeAppointment = async function() {
     return;
   }
 
-     // Check if prescription and billing are filled
+     // Check if prescription, billing, and doctor's note are filled
    const prescName = document.getElementById('presc-name')?.value.trim();
    const prescDetails = document.getElementById('presc-details')?.value.trim();
    const billingTitle = document.getElementById('billing-title')?.value.trim();
    const billingAmount = document.getElementById('billing-amount')?.value.trim();
    const billingDue = document.getElementById('billing-due')?.value.trim();
+   const noteContent = document.getElementById('doctors-note-input')?.value.trim();
 
    // Check if required fields are filled
-   if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue) {
-     alert("Please fill in prescription and billing before completing the appointment.");
+   if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent) {
+     alert("Please fill in prescription, billing, and doctor's note before completing the appointment.");
      return;
    }
 
@@ -638,11 +674,49 @@ window.completeAppointment = async function() {
           doctorId = doctorRows[0].id;
         }
       }
-    }
+         }
 
-    
+     // Get the auth user ID from the patients table for doctor's notes
+     let authUserId = null;
+     try {
+       const { data: patientData, error: patientError } = await supabase
+         .from('patients')
+         .select('user_id')
+         .eq('id', userId)
+         .single();
+       
+       if (patientError) {
+         console.error('Patient lookup error:', patientError);
+         // Try alternative approach - maybe userId is already an auth user ID
+         authUserId = userId;
+       } else if (patientData && patientData.user_id) {
+         authUserId = patientData.user_id;
+       } else {
+         console.log('No user_id found in patient data, using original userId as fallback');
+         authUserId = userId;
+       }
+     } catch (error) {
+       console.error('Error getting auth user ID:', error);
+       // Fallback: try using the user_id directly if it might already be an auth user ID
+       authUserId = userId;
+     }
 
-    // Create prescription record
+     // Validate that we have a valid authUserId
+     if (!authUserId) {
+       alert("Error: Could not determine the correct patient ID. Please try again.");
+       console.error("authUserId is null or undefined");
+       return;
+     }
+
+     // Create doctor's note record
+     const doctorNote = {
+       patient_id: authUserId,
+       content: noteContent,
+       doctor_id: doctorId,
+       clinic_id: clinicId
+     };
+
+     // Create prescription record
     const prescription = {
       user_id: userId,
       name: prescName,
@@ -672,20 +746,22 @@ window.completeAppointment = async function() {
       updated_at: new Date().toISOString()
     };
 
-    // Execute remaining database operations
-    const [prescRes, billRes, apptRes] = await Promise.all([
-      supabase.from('prescriptions').insert([prescription]),
-      supabase.from('billings').insert([billing]),
-      supabase.from('appointments').update(appointmentUpdate).eq('id', appointmentId)
-    ]);
+         // Execute remaining database operations
+     const [noteRes, prescRes, billRes, apptRes] = await Promise.all([
+       supabase.from('doctor_notes').insert([doctorNote]),
+       supabase.from('prescriptions').insert([prescription]),
+       supabase.from('billings').insert([billing]),
+       supabase.from('appointments').update(appointmentUpdate).eq('id', appointmentId)
+     ]);
 
-    if (prescRes.error || billRes.error || apptRes.error) {
-      alert('Failed to complete appointment. Please try again.');
-      console.error('Prescription error:', prescRes.error);
-      console.error('Billing error:', billRes.error);
-      console.error('Appointment error:', apptRes.error);
-      return;
-    }
+     if (noteRes.error || prescRes.error || billRes.error || apptRes.error) {
+       alert('Failed to complete appointment. Please try again.');
+       console.error('Doctor note error:', noteRes.error);
+       console.error('Prescription error:', prescRes.error);
+       console.error('Billing error:', billRes.error);
+       console.error('Appointment error:', apptRes.error);
+       return;
+     }
 
     // Success - show confirmation and redirect
     alert('Appointment completed successfully! The patient has been moved to completed appointments.');
