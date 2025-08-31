@@ -603,7 +603,7 @@ async function managePatient(app) {
      
      <!-- Complete Appointment Button -->
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 100;">
-      <button 
+      <button
         onclick="completeAppointment()" 
         style="
           padding: 12px 24px;
@@ -785,8 +785,10 @@ async function submitManagement() {
   const billingTitle = document.getElementById('billing-title').value.trim();
   const billingAmount = document.getElementById('billing-amount').value.trim();
   const billingDue = document.getElementById('billing-due').value.trim();
+  const noteContent = document.getElementById('doctors-note-input').value.trim();
 
-  const anyEmpty = !prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue;
+
+  const anyEmpty = !prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent;
   if (anyEmpty && !confirm("Some fields are empty. Submit anyway with null values?")) return;
 
   // Resolve doctor_id by matching the appointment's doctor name within this clinic
