@@ -494,7 +494,7 @@ async function loadPatientDetails(userId, appointments) {
         return false;
       });
 
-
+// Patient History sa Patient page
     const div = document.createElement('div');
     div.className = 'completed-entry';
     div.style.display = 'grid';
@@ -509,6 +509,7 @@ async function loadPatientDetails(userId, appointments) {
         <strong>Reason:</strong><br>${app.reason}
       </div>
       <div>
+        <strong>Patient Name:</strong><br>${app.patient_name || 'N/A'}<br><br>
         <strong>Doctor:</strong><br>${app.doctors?.name || 'Unknown'}<br><br>
         ${matchedPrescriptions.length
           ? matchedPrescriptions.map(p => `<div><strong>${p.name}</strong><br>${p.details}</div>`).join('<br>')
