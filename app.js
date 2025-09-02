@@ -135,7 +135,8 @@ async function loadAppointments() {
     const doctorNameDisplay = app.doctors_id ? (doctorIdToName[app.doctors_id] || 'Unknown') : (app.subtitle || 'Unknown');
     const doctorNameArg = JSON.stringify(doctorNameDisplay);
     div.innerHTML = `
-      <strong>${name}</strong><br>
+      <strong>User: ${name}</strong><br>
+      <strong>Patient Name: ${app.patient_name}</strong><br><br>
       Gender: ${gender}<br>
       Date: ${app.date}<br>
       Time: ${time12Hr}<br>
@@ -242,7 +243,8 @@ async function loadApprovedPatients() {
     const div = document.createElement('div');
     div.className = 'patient';
     div.innerHTML = `
-      <strong>${name}</strong><br><br>
+      <strong>User: ${name}</strong><br>
+      <strong>Patient Name: ${app.patient_name}</strong><br><br>
       Gender: ${gender}<br>
       Age: ${app.patient_age}<br>
       Blood Type: ${app.blood_type || 'N/A'}<br>
@@ -414,14 +416,36 @@ async function loadPatientDetails(userId, appointments) {
     authUserId = userId; // Fallback
   }
 
-  const [patientRes, prescRes, billingRes, notesRes] = await Promise.all([
+  const [patientRes, prescRes, billingRes] = await Promise.all([
     supabase.from('patients').select('full_name, address').eq('id', userId).single(),
     supabase.from('prescriptions').select('*').eq('user_id', userId),
-    supabase.from('billings').select('*').eq('user_id', userId),
-    supabase.from('doctor_notes').select('*').eq('patient_id', authUserId)
+    supabase.from('billings').select('*').eq('user_id', userId)
   ]);
 
-  if (patientRes.error || prescRes.error || billingRes.error || notesRes.error) {
+  // Try to load doctor notes by appointment_id; fallback to patient_id if the column doesn't exist
+  const appointmentIds = (appointments || []).map(a => a.id);
+  let doctorNotes = [];
+  try {
+    if (appointmentIds.length > 0) {
+      const { data: notesByAppt } = await supabase
+        .from('doctor_notes')
+        .select('*')
+        .in('appointments_id', appointmentIds)
+        .eq('clinic_id', clinicId);
+      if (Array.isArray(notesByAppt)) doctorNotes = notesByAppt;
+    }
+  } catch (e) {
+    // Likely column does not exist; we'll fallback to patient-based fetch
+  }
+  if (doctorNotes.length === 0) {
+    const { data: notesByPatient } = await supabase
+      .from('doctor_notes')
+      .select('*')
+      .eq('patient_id', authUserId);
+    doctorNotes = notesByPatient || [];
+  }
+
+  if (patientRes.error || prescRes.error || billingRes.error) {
     content.innerHTML = 'Error loading details.';
     return;
   }
@@ -429,7 +453,6 @@ async function loadPatientDetails(userId, appointments) {
   const patient = patientRes.data;
   const prescriptions = prescRes.data;
   const billings = billingRes.data;
-  const doctorNotes = notesRes.data;
 
   title.innerHTML = `
     <div style="text-align: left; font-size: 0.95rem; line-height: 1.4;">
@@ -455,9 +478,21 @@ async function loadPatientDetails(userId, appointments) {
     b.appointment_id === app.id
   );
 
-  const matchedNotes = doctorNotes.filter(n =>
-    n.appointment_id === app.id
-  );
+  // Doctor's notes: prefer strict appointment_id match; otherwise fallback to previous heuristic
+  const hasAppointmentId = doctorNotes.length > 0 && Object.prototype.hasOwnProperty.call(doctorNotes[0], 'appointments_id');
+  const matchedNotes = hasAppointmentId
+    ? doctorNotes.filter(n => n.appointments_id === app.id)
+    : doctorNotes.filter(n => {
+        if (n.patient_id !== authUserId) return false;
+        if (n.doctor_id && app.doctors_id) {
+          return n.doctor_id === app.doctors_id;
+        }
+        if (n.created_at) {
+          const noteDate = n.created_at.split('T')[0];
+          return noteDate === app.date;
+        }
+        return false;
+      });
 
 
     const div = document.createElement('div');
@@ -482,15 +517,15 @@ async function loadPatientDetails(userId, appointments) {
       <div>
         <strong>Doctor's Notes:</strong><br><br>
         ${matchedNotes.length
-          ? matchedNotes.map(n => `<div><strong>Clinical Notes:</strong><br>${n.content}</div>`).join('<br>')
-          : 'No doctor notes'}
+          ? matchedNotes.map(n => `<div><strong>Doctor's Notes:</strong><br>${n.content}</div>`).join('<br>')
+          : 'No doctors notes'}
       </div>
       <div>
         ${matchedBillings.length
           ? matchedBillings.map(b => `
               <div>
                 <strong>${b.title}</strong><br>
-                  ₱${b.amount}<br>
+                  ₱${b.amount}<br><br>
                   <strong>Status:</strong> ${b.status}<br>
                   ${b.status === 'unpaid'
                   ? `<button onclick="markBillingAsPaid('${b.id}')">Mark as Paid</button>`
@@ -576,31 +611,31 @@ async function managePatient(app) {
         <h3>Prescription</h3>
         <label>Medicine Name(s)</label>
         <input type="text" id="presc-name" placeholder="Enter medicine(s) name" /> 
-                 <label>Prescription Details</label>
+        <label>Prescription Details</label>
          <textarea id="presc-details" placeholder="Enter prescription details, dosage, instructions, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
-       </div>
-       <div class="column">
+      </div>
+      <div class="column">
          <h3>Doctor's Notes</h3>
          <label>Clinical Notes</label>
          <textarea id="doctors-note-input" placeholder="Enter doctor's notes, observations, recommendations, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
        </div>
        <div class="column">
          <h3>Billing of Appointment</h3>
-                  <label>Billing Title</label>
+        <label>Billing Title</label>
           <input type="text" id="billing-title" value="${existingBillingData?.title || app.reason}" placeholder="Service description" onchange="updateBillingField('title')" />
-          <label>Billing Amount</label>
+        <label>Billing Amount</label>
           <input type="number" id="billing-amount" value="${existingBillingData?.amount || ''}" placeholder="Enter amount" step="0.01" onchange="updateBillingField('amount')" />
-          <label>Due Date</label>
+        <label>Due Date</label>
           <input type="date" id="billing-due" value="${existingBillingData?.due_date || ''}" min="${today}" onchange="updateBillingField('due_date')" />
-          <label>Payment Status</label>
+        <label>Payment Status</label>
           <select id="billing-status" onchange="updateBillingStatus()">
             <option value="unpaid" ${existingBillingStatus === 'unpaid' ? 'selected' : ''}>Unpaid</option>
             <option value="paid" ${existingBillingStatus === 'paid' ? 'selected' : ''}>Paid</option>
             <option value="partial" ${existingBillingStatus === 'partial' ? 'selected' : ''}>Partial Payment</option>
-          </select>
-       </div>
-          </div>
-     
+        </select>
+      </div>
+    </div>
+    
      <!-- Complete Appointment Button -->
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 100;">
       <button
@@ -713,7 +748,8 @@ window.completeAppointment = async function() {
        patient_id: authUserId,
        content: noteContent,
        doctor_id: doctorId,
-       clinic_id: clinicId
+       clinic_id: clinicId,
+       appointments_id: appointmentId
      };
 
      // Create prescription record
@@ -766,8 +802,22 @@ window.completeAppointment = async function() {
     // Success - show confirmation and redirect
     alert('Appointment completed successfully! The patient has been moved to completed appointments.');
 
-    // Show Patients page and ensure completed history is visible
-    showPage('details');
+    // Go directly to this patient's history view on the Patients page
+    try {
+      const { data: userHistory } = await supabase
+        .from('appointments')
+        .select('*, doctors(name)')
+        .eq('clinic_id', clinicId)
+        .eq('user_id', userId)
+        .eq('status', 'completed')
+        .order('date', { ascending: true });
+
+      showPage('details', { manageMode: true });
+      await loadPatientDetails(userId, userHistory || []);
+    } catch (e) {
+      // Fallback to Patients page if loading history fails
+      showPage('details');
+    }
 
   } catch (error) {
     alert('Error completing appointment. Please try again.');
@@ -790,6 +840,38 @@ async function submitManagement() {
 
   const anyEmpty = !prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent;
   if (anyEmpty && !confirm("Some fields are empty. Submit anyway with null values?")) return;
+
+  // Get the auth user ID from the patients table for doctor's notes
+  let authUserId = null;
+  try {
+    const { data: patientData, error: patientError } = await supabase
+      .from('patients')
+      .select('user_id')
+      .eq('id', userId)
+      .single();
+    
+    if (patientError) {
+      console.error('Patient lookup error:', patientError);
+      // Try alternative approach - maybe userId is already an auth user ID
+      authUserId = userId;
+    } else if (patientData && patientData.user_id) {
+      authUserId = patientData.user_id;
+    } else {
+      console.log('No user_id found in patient data, using original userId as fallback');
+      authUserId = userId;
+    }
+  } catch (error) {
+    console.error('Error getting auth user ID:', error);
+    // Fallback: try using the user_id directly if it might already be an auth user ID
+    authUserId = userId;
+  }
+
+  // Validate that we have a valid authUserId
+  if (!authUserId) {
+    alert("Error: Could not determine the correct patient ID. Please try again.");
+    console.error("authUserId is null or undefined");
+    return;
+  }
 
   // Resolve doctor_id by matching the appointment's doctor name within this clinic
   const doctorName = selectedAppointment.doctors?.name;
@@ -828,15 +910,28 @@ async function submitManagement() {
     clinic_id: clinicId
   };
 
-  const [prescRes, billRes, apptRes] = await Promise.all([
+  // Create doctor's note record
+  const doctorNote = {
+    patient_id: authUserId,
+    content: noteContent || null,
+    doctor_id: doctorId,
+    clinic_id: clinicId,
+    appointments_id: appointmentId
+  };
+
+  const [noteRes, prescRes, billRes, apptRes] = await Promise.all([
+    supabase.from('doctor_notes').insert([doctorNote]),
     supabase.from('prescriptions').insert([presc]),
     supabase.from('billings').insert([billing]),
     supabase.from('appointments').update({ status: 'completed' }).eq('id', appointmentId)
   ]);
 
-  if (prescRes.error || billRes.error || apptRes.error) {
+  if (noteRes.error || prescRes.error || billRes.error || apptRes.error) {
     alert('Failed to complete appointment.');
-    console.error(prescRes.error, billRes.error, apptRes.error);
+    console.error('Doctor note error:', noteRes.error);
+    console.error('Prescription error:', prescRes.error);
+    console.error('Billing error:', billRes.error);
+    console.error('Appointment error:', apptRes.error);
   } else {
     alert('Appointment completed.');
     showPage('accommodated');
@@ -1671,7 +1766,7 @@ async function loadCalendar() {
   
   const { data: appointments } = await supabase
     .from('appointments')
-    .select('*')
+    .select('*, doctors(name)')
     .eq('clinic_id', clinicId)
     .gte('date', startDate)
     .lte('date', endDate);
@@ -1765,13 +1860,13 @@ async function handleCalendarDoctorFilterChange() {
   
   let query = supabase
     .from('appointments')
-    .select('*')
+    .select('*, doctors(name)')
     .eq('clinic_id', clinicId)
     .gte('date', startDate)
     .lte('date', endDate);
   
   if (selectedDoctor) {
-    query = query.eq('subtitle', selectedDoctor);
+    query = query.eq('doctors.name', selectedDoctor);
   }
   
   const { data: appointments } = await query;
@@ -1792,7 +1887,7 @@ window.showCalendarDayAppointments = function(dateStr, appointmentCount) {
     .eq('date', dateStr);
   
   if (selectedDoctor) {
-    query = query.eq('subtitle', selectedDoctor);
+    query = query.eq('doctors.name', selectedDoctor);
   }
   
   query.then(({ data: appointments }) => {
@@ -1918,7 +2013,7 @@ async function loadDoctorReports(date, doctorFilter = '') {
     // Get doctor's appointments for the date
     const { data: appointments } = await supabase
       .from('appointments')
-      .select('*')
+      .select('*, doctors(name)')
       .eq('clinic_id', clinicId)
       .eq('subtitle', doctor.name)
       .eq('date', date);
