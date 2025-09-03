@@ -277,7 +277,7 @@ async function loadCompletedAppointments() {
   // Build query
   let query = supabase
     .from('appointments')
-    .select('*, doctors(name)')
+    .select('*')
     .eq('clinic_id', clinicId);
 
   if (statusFilter) {
@@ -291,7 +291,7 @@ async function loadCompletedAppointments() {
   }
 
   if (doctorFilter) {
-    query = query.eq('doctors.name', doctorFilter);
+    query = query.eq('subtitle', doctorFilter);
   }
 
   const [appointmentsRes, patientsRes, prescRes, billingRes] = await Promise.all([
@@ -398,51 +398,44 @@ async function loadPatientDetails(userId, appointments) {
   content.innerHTML = '';
   showPage('details', { manageMode: true });
 
-  // Get the auth user ID for doctor's notes query
-  let authUserId = null;
-  try {
-    const { data: patientData } = await supabase
-      .from('patients')
-      .select('user_id')
-      .eq('id', userId)
-      .single();
-    
-    if (patientData && patientData.user_id) {
-      authUserId = patientData.user_id;
-    } else {
-      authUserId = userId; // Fallback
-    }
-  } catch (error) {
-    authUserId = userId; // Fallback
-  }
-
   const [patientRes, prescRes, billingRes] = await Promise.all([
     supabase.from('patients').select('full_name, address').eq('id', userId).single(),
     supabase.from('prescriptions').select('*').eq('user_id', userId),
     supabase.from('billings').select('*').eq('user_id', userId)
   ]);
 
-  // Try to load doctor notes by appointment_id; fallback to patient_id if the column doesn't exist
-  const appointmentIds = (appointments || []).map(a => a.id);
-  let doctorNotes = [];
+  // Load the full appointment history for this patient within this clinic
+  let appsToRender = [];
   try {
-    if (appointmentIds.length > 0) {
-      const { data: notesByAppt } = await supabase
+    const { data: allApps } = await supabase
+      .from('appointments')
+      .select('*, doctors(name)')
+      .eq('clinic_id', clinicId)
+      .eq('user_id', userId)
+      .order('date', { ascending: true })
+      .order('created_at', { ascending: true });
+    appsToRender = allApps || [];
+  } catch (e) {
+    appsToRender = [];
+  }
+  if (appsToRender.length === 0 && Array.isArray(appointments)) {
+    appsToRender = appointments;
+  }
+
+  // Fetch doctor's notes for these appointments (by appointment id)
+  const appointmentIds = (appsToRender || []).map(a => a.id);
+  let doctorNotes = [];
+  if (appointmentIds.length > 0) {
+    try {
+      const { data: notes } = await supabase
         .from('doctor_notes')
         .select('*')
         .in('appointments_id', appointmentIds)
         .eq('clinic_id', clinicId);
-      if (Array.isArray(notesByAppt)) doctorNotes = notesByAppt;
+      doctorNotes = notes || [];
+    } catch (e) {
+      doctorNotes = [];
     }
-  } catch (e) {
-    // Likely column does not exist; we'll fallback to patient-based fetch
-  }
-  if (doctorNotes.length === 0) {
-    const { data: notesByPatient } = await supabase
-      .from('doctor_notes')
-      .select('*')
-      .eq('patient_id', authUserId);
-    doctorNotes = notesByPatient || [];
   }
 
   if (patientRes.error || prescRes.error || billingRes.error) {
@@ -467,7 +460,7 @@ async function loadPatientDetails(userId, appointments) {
     return isoDateTime.split('T')[0];
   }
 
-  for (const app of appointments) {
+  for (const app of appsToRender) {
     const time12Hr = formatTimeTo12Hr(app.time);
 
   const matchedPrescriptions = prescriptions.filter(p =>
@@ -478,21 +471,8 @@ async function loadPatientDetails(userId, appointments) {
     b.appointment_id === app.id
   );
 
-  // Doctor's notes: prefer strict appointment_id match; otherwise fallback to previous heuristic
-  const hasAppointmentId = doctorNotes.length > 0 && Object.prototype.hasOwnProperty.call(doctorNotes[0], 'appointments_id');
-  const matchedNotes = hasAppointmentId
-    ? doctorNotes.filter(n => n.appointments_id === app.id)
-    : doctorNotes.filter(n => {
-        if (n.patient_id !== authUserId) return false;
-        if (n.doctor_id && app.doctors_id) {
-          return n.doctor_id === app.doctors_id;
-        }
-        if (n.created_at) {
-          const noteDate = n.created_at.split('T')[0];
-          return noteDate === app.date;
-        }
-        return false;
-      });
+  const matchedNotes = doctorNotes.filter(n => n.appointments_id === app.id);
+
 
 // Patient History sa Patient page
     const div = document.createElement('div');
@@ -511,15 +491,16 @@ async function loadPatientDetails(userId, appointments) {
       <div>
         <strong>Patient Name:</strong><br>${app.patient_name || 'N/A'}<br><br>
         <strong>Doctor:</strong><br>${app.doctors?.name || 'Unknown'}<br><br>
+        <strong>Prescription:</strong><br>
         ${matchedPrescriptions.length
-          ? matchedPrescriptions.map(p => `<div><strong>${p.name}</strong><br>${p.details}</div>`).join('<br>')
+          ? matchedPrescriptions.map(p => `${p.details}</div>`).join('<br>')
           : 'No prescription'}
       </div>
       <div>
-        <strong>Doctor's Notes:</strong><br><br>
         ${matchedNotes.length
           ? matchedNotes.map(n => `<div><strong>Doctor's Notes:</strong><br>${n.content}</div>`).join('<br>')
           : 'No doctors notes'}
+        <br><br>
       </div>
       <div>
         ${matchedBillings.length
@@ -536,7 +517,6 @@ async function loadPatientDetails(userId, appointments) {
           : 'No billing'}
       </div>
     `;
-
     content.appendChild(div);
   }
 }
@@ -558,6 +538,26 @@ window.markBillingAsPaid = async function (billingId) {
     location.reload(); // Fully reload the page
   }
 };
+
+// Helper to get Supabase auth user id for Storage RLS folder
+async function getAuthUserIdForStorage() {
+  try {
+    let { data } = await supabase.auth.getUser();
+    let user = data?.user || null;
+    if (!user) {
+      const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
+      if (anonErr) {
+        console.warn('Anonymous sign-in failed:', anonErr);
+        return null;
+      }
+      user = anonData?.user || null;
+    }
+    return user?.id || null;
+  } catch (e) {
+    console.warn('Unable to ensure Supabase auth user:', e);
+    return null;
+  }
+}
 
 // Manage Patient
 async function managePatient(app) {
@@ -803,15 +803,15 @@ window.completeAppointment = async function() {
     // Success - show confirmation and redirect
     alert('Appointment completed successfully! The patient has been moved to completed appointments.');
 
-    // Go directly to this patient's history view on the Patients page
+    // Go directly to this patient's full history view on the Patients page
     try {
       const { data: userHistory } = await supabase
         .from('appointments')
         .select('*, doctors(name)')
         .eq('clinic_id', clinicId)
         .eq('user_id', userId)
-        .eq('status', 'completed')
-        .order('date', { ascending: true });
+        .order('date', { ascending: true })
+        .order('created_at', { ascending: true });
 
       showPage('details', { manageMode: true });
       await loadPatientDetails(userId, userHistory || []);
@@ -1014,23 +1014,8 @@ window.showScheduleForm = async function() {
   document.getElementById('schedule-doctor-btn').style.display = 'none';
   document.getElementById('doctors-list').style.display = 'none';
   
-  // Populate doctor dropdown
   await populateScheduleDoctorDropdown();
-  
-  // Reset form and initialize calendar
-  resetScheduleForm();
-  renderScheduleCalendar();
-  
-  // Add event listener for doctor selection
-  const doctorSelect = document.getElementById('schedule-doctor-select');
-  if (doctorSelect) {
-    doctorSelect.addEventListener('change', function() {
-      selectedDoctorId = this.value;
-      if (selectedDoctorId) {
-        loadDoctorSchedules();
-      }
-    });
-  }
+  initWeeklyScheduleBuilder();
 };
 
 window.hideAddDoctorForm = function() {
@@ -1355,312 +1340,224 @@ async function populateScheduleDoctorDropdown() {
   }
 }
 
-// Schedule calendar variables
-let scheduleCurrentDate = new Date();
-let scheduleCurrentMonth = scheduleCurrentDate.getMonth();
-let scheduleCurrentYear = scheduleCurrentDate.getFullYear();
-let selectedScheduleDate = null;
-let selectedDoctorId = null;
+// Weekly schedule builder state
+let weeklySelectedDoctorId = null;
 
-// Reset schedule form
-function resetScheduleForm() {
-  document.getElementById('schedule-doctor-select').value = '';
-  document.getElementById('schedule-time-settings').style.display = 'none';
-  selectedScheduleDate = null;
-  selectedDoctorId = null;
-  
-  // Reset calendar to current month
-  scheduleCurrentMonth = new Date().getMonth();
-  scheduleCurrentYear = new Date().getFullYear();
-  renderScheduleCalendar();
-}
+function initWeeklyScheduleBuilder() {
+  weeklySelectedDoctorId = null;
+  const select = document.getElementById('schedule-doctor-select');
+  const container = document.getElementById('weekly-days');
+  const intervalSelect = document.getElementById('schedule-interval');
+  if (!select || !container || !intervalSelect) return;
 
-// Render schedule calendar
-function renderScheduleCalendar() {
-  const monthYearElement = document.getElementById('schedule-month-year');
-  const calendarDaysElement = document.getElementById('schedule-calendar-days');
-  
-  if (!monthYearElement || !calendarDaysElement) return;
-  
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                     'July', 'August', 'September', 'October', 'November', 'December'];
-  
-  monthYearElement.textContent = `${monthNames[scheduleCurrentMonth]} ${scheduleCurrentYear}`;
-  
-  const firstDay = new Date(scheduleCurrentYear, scheduleCurrentMonth, 1);
-  const lastDay = new Date(scheduleCurrentYear, scheduleCurrentMonth + 1, 0);
-  const startDate = new Date(firstDay);
-  startDate.setDate(startDate.getDate() - firstDay.getDay());
-  
-  let calendarHTML = '';
-  
-  for (let i = 0; i < 42; i++) {
-    const currentDate = new Date(startDate);
-    currentDate.setDate(startDate.getDate() + i);
-    
-    const isCurrentMonth = currentDate.getMonth() === scheduleCurrentMonth;
-    const isToday = currentDate.toDateString() === new Date().toDateString();
-    const isSelected = selectedScheduleDate && currentDate.toDateString() === selectedScheduleDate.toDateString();
-    
-    let dayClass = 'schedule-day';
-    if (!isCurrentMonth) dayClass += ' other-month';
-    if (isToday) dayClass += ' today';
-    if (isSelected) dayClass += ' selected';
-    
-    const dayNumber = currentDate.getDate();
-    const dateString = currentDate.toISOString().split('T')[0];
-    
-    calendarHTML += `
-      <div class="${dayClass}" onclick="selectScheduleDate('${dateString}')" data-date="${dateString}">
-        <div class="schedule-day-number">${dayNumber}</div>
-        <div class="schedule-day-status" id="status-${dateString}"></div>
+  container.innerHTML = '';
+  const days = [
+    { id: 1, label: 'Sunday' },
+    { id: 2, label: 'Monday' },
+    { id: 3, label: 'Tuesday' },
+    { id: 4, label: 'Wednesday' },
+    { id: 5, label: 'Thursday' },
+    { id: 6, label: 'Friday' },
+    { id: 7, label: 'Saturday' }
+  ];
+
+  days.forEach(d => {
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'weekly-day';
+    dayDiv.innerHTML = `
+      <div class="weekly-day-header">
+        <label>
+          <input type="checkbox" class="day-enabled" data-day="${d.id}"> ${d.label}
+        </label>
+      </div>
+      <div class="weekly-day-body" id="day-body-${d.id}" style="display:none;">
+        <div class="time-range-row">
+          <label>Start</label>
+          <input type="time" class="time-start" data-day="${d.id}" value="09:00">
+          <label>End</label>
+          <input type="time" class="time-end" data-day="${d.id}" value="17:00">
+          <button class="apply-range" data-day="${d.id}">Apply</button>
+        </div>
+        <div class="slots" id="slots-${d.id}"></div>
       </div>
     `;
-  }
-  
-  calendarDaysElement.innerHTML = calendarHTML;
-  
-  // Load existing schedules for the selected doctor
-  if (selectedDoctorId) {
-    loadDoctorSchedules();
-  }
-}
-
-// Select schedule date
-window.selectScheduleDate = function(dateString) {
-  const date = new Date(dateString);
-  if (date < new Date()) {
-    alert('Cannot set schedules for past dates.');
-    return;
-  }
-  
-  selectedScheduleDate = date;
-  
-  // Update calendar display
-  document.querySelectorAll('.schedule-day').forEach(day => {
-    day.classList.remove('selected');
+    container.appendChild(dayDiv);
   });
-  
-  const selectedDay = document.querySelector(`[data-date="${dateString}"]`);
-  if (selectedDay) {
-    selectedDay.classList.add('selected');
-  }
-  
-  // Show time settings
-  const timeSettings = document.getElementById('schedule-time-settings');
-  const dateDisplay = document.getElementById('selected-date-display');
-  
-  if (timeSettings && dateDisplay) {
-    timeSettings.style.display = 'block';
-    dateDisplay.textContent = date.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-  }
-  
-  // Load existing schedule for this date
-  loadDateSchedule(dateString);
-};
 
-// Load doctor schedules for the calendar
-async function loadDoctorSchedules() {
-  if (!selectedDoctorId) return;
-  
-  try {
-    const { data: schedules, error } = await supabase
-      .from('clinic_schedules')
-    .select('*')
-      .eq('doctors_id', selectedDoctorId)
-      .not('date', 'is', null);
-    
-    if (error) {
-      console.error('Error loading schedules:', error);
+  container.addEventListener('change', (e) => {
+    const target = e.target;
+    if (target.classList.contains('day-enabled')) {
+      const day = target.getAttribute('data-day');
+      const body = document.getElementById(`day-body-${day}`);
+      if (body) body.style.display = target.checked ? '' : 'none';
+    }
+  });
+
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('.apply-range');
+    if (!btn) return;
+    const day = btn.getAttribute('data-day');
+    const startEl = container.querySelector(`.time-start[data-day="${day}"]`);
+    const endEl = container.querySelector(`.time-end[data-day="${day}"]`);
+    const slotsEl = document.getElementById(`slots-${day}`);
+    const intervalMinutes = parseInt(document.getElementById('schedule-interval').value, 10) || 30;
+    if (!startEl || !endEl || !slotsEl) return;
+    const start = startEl.value;
+    const end = endEl.value;
+    if (!start || !end || start >= end) {
+      alert('Please provide a valid start and end time.');
       return;
     }
-    
-    // Update calendar display
-    schedules.forEach(schedule => {
-      const statusElement = document.getElementById(`status-${schedule.date}`);
-      if (statusElement) {
-        statusElement.textContent = `${schedule.available_time} - Available`;
-        const dayElement = statusElement.closest('.schedule-day');
-        if (dayElement) {
-          dayElement.classList.add('has-schedule');
-        }
+    // Generate discrete time slots
+    const slots = generateTimeSlots(start, end, intervalMinutes);
+    slotsEl.innerHTML = slots.map(t => `
+      <label class="slot-item">
+        <input type="checkbox" class="slot-checkbox" data-day="${day}" value="${t}"> ${t}
+      </label>
+    `).join('');
+  });
+
+  select.addEventListener('change', async function() {
+    weeklySelectedDoctorId = this.value || null;
+    await loadWeeklySchedule();
+  });
+}
+
+function generateTimeSlots(start, end, intervalMinutes) {
+  const slots = [];
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let startMins = sh * 60 + sm;
+  const endMins = eh * 60 + em;
+  while (startMins < endMins) {
+    const h = Math.floor(startMins / 60).toString().padStart(2, '0');
+    const m = (startMins % 60).toString().padStart(2, '0');
+    slots.push(`${h}:${m}`);
+    startMins += intervalMinutes;
+  }
+  return slots;
+}
+
+async function loadWeeklySchedule() {
+  const container = document.getElementById('weekly-days');
+  if (!weeklySelectedDoctorId || !container) return;
+  // Clear selections
+  container.querySelectorAll('.day-enabled').forEach(c => { c.checked = false; });
+  container.querySelectorAll('[id^="day-body-"]').forEach(b => { b.style.display = 'none'; });
+  container.querySelectorAll('.slots').forEach(s => { s.innerHTML = ''; });
+
+  try {
+    const { data, error } = await supabase
+      .from('clinic_schedules')
+      .select('id, day_of_week, available_time')
+      .eq('doctors_id', weeklySelectedDoctorId)
+      .is('date', null);
+    if (error) {
+      console.error('Failed to load weekly schedule:', error);
+      return;
+    }
+    const byDay = new Map();
+    (data || []).forEach(row => {
+      if (!byDay.has(row.day_of_week)) byDay.set(row.day_of_week, []);
+      byDay.get(row.day_of_week).push(row.available_time);
+    });
+    byDay.forEach((times, day) => {
+      const enabled = container.querySelector(`.day-enabled[data-day="${day}"]`);
+      const body = document.getElementById(`day-body-${day}`);
+      const slotsEl = document.getElementById(`slots-${day}`);
+      if (enabled && body && slotsEl) {
+        enabled.checked = true;
+        body.style.display = '';
+        slotsEl.innerHTML = times.map(t => `
+          <label class="slot-item">
+            <input type="checkbox" class="slot-checkbox" data-day="${day}" value="${t}" checked> ${t}
+          </label>
+        `).join('');
       }
     });
-  } catch (error) {
-    console.error('Error loading schedules:', error);
+  } catch (e) {
+    console.error('Error loading weekly schedule:', e);
   }
 }
 
-// Load specific date schedule
-async function loadDateSchedule(dateString) {
-  if (!selectedDoctorId || !dateString) return;
-  
-  try {
-    const { data: schedule, error } = await supabase
-      .from('clinic_schedules')
-      .select('*')
-      .eq('doctors_id', selectedDoctorId)
-      .eq('date', dateString)
-      .single();
-    
-    if (error && error.code !== 'PGRST116') {
-      console.error('Error loading date schedule:', error);
-      return;
-    }
-    
-    if (schedule) {
-      // Parse time and set form values
-      const [startTime, endTime] = schedule.available_time.split(' - ');
-      document.getElementById('schedule-start-time').value = startTime || '09:00';
-      document.getElementById('schedule-end-time').value = endTime || '18:00';
-      document.getElementById('schedule-available').checked = true;
-    } else {
-      // Set default values
-      document.getElementById('schedule-start-time').value = '09:00';
-      document.getElementById('schedule-end-time').value = '18:00';
-      document.getElementById('schedule-available').checked = true;
-    }
-  } catch (error) {
-    console.error('Error loading date schedule:', error);
-  }
-}
-
-// Navigation functions
-window.previousScheduleMonth = function() {
-  scheduleCurrentMonth--;
-  if (scheduleCurrentMonth < 0) {
-    scheduleCurrentMonth = 11;
-    scheduleCurrentYear--;
-  }
-  renderScheduleCalendar();
-};
-
-window.nextScheduleMonth = function() {
-  scheduleCurrentMonth++;
-  if (scheduleCurrentMonth > 11) {
-    scheduleCurrentMonth = 0;
-    scheduleCurrentYear++;
-  }
-  renderScheduleCalendar();
-};
-
-window.todaySchedule = function() {
-  scheduleCurrentMonth = new Date().getMonth();
-  scheduleCurrentYear = new Date().getFullYear();
-  renderScheduleCalendar();
-};
-
-// Save doctor schedule
-window.saveDoctorSchedule = async function() {
+window.saveWeeklySchedule = async function() {
   const doctorId = document.getElementById('schedule-doctor-select').value;
-  
   if (!doctorId) {
     alert('Please select a doctor first.');
     return;
   }
-  
-  if (!selectedScheduleDate) {
-    alert('Please select a date first.');
-    return;
-  }
-  
-  const isAvailable = document.getElementById('schedule-available').checked;
-  const startTime = document.getElementById('schedule-start-time').value;
-  const endTime = document.getElementById('schedule-end-time').value;
-  
-  if (!isAvailable) {
-    // Delete schedule for this date
-    try {
-      const { error } = await supabase
-      .from('clinic_schedules')
-        .delete()
-        .eq('doctors_id', doctorId)
-        .eq('date', selectedScheduleDate.toISOString().split('T')[0]);
-    
-    if (error) {
-        console.error('Error deleting schedule:', error);
-        alert('Error updating schedule. Please try again.');
-      return;
-    }
-    
-      alert('Schedule removed for this date.');
-      renderScheduleCalendar();
-      return;
-  } catch (error) {
-      console.error('Error deleting schedule:', error);
-      alert('Error updating schedule. Please try again.');
-      return;
-    }
-  }
-  
-  if (!startTime || !endTime) {
-    alert('Please set both start and end times.');
-    return;
-  }
-  
-  if (startTime >= endTime) {
-    alert('End time must be after start time.');
-      return;
-    }
-    
-  // Convert JavaScript day (0-6, Sunday-Saturday) to database format (1-7, Monday-Sunday)
-  let dayOfWeek = selectedScheduleDate.getDay();
-  if (dayOfWeek === 0) dayOfWeek = 7; // Sunday becomes 7
-  // Monday (1) through Saturday (6) stay the same
-  
-  const scheduleData = {
-    doctors_id: doctorId,
-    day_of_week: dayOfWeek,
-    available_time: `${startTime} - ${endTime}`,
-    date: selectedScheduleDate.toISOString().split('T')[0],
-    appointments_id: null
-  };
-  
+  const container = document.getElementById('weekly-days');
+  const selected = [];
+  container.querySelectorAll('.slot-checkbox:checked').forEach(cb => {
+    const day = parseInt(cb.getAttribute('data-day'), 10);
+    selected.push({ day_of_week: day, available_time: cb.value });
+  });
+
   try {
-    // Check if schedule already exists for this date
-    const { data: existingSchedule } = await supabase
+    // Remove existing weekly schedule (date IS NULL) for this doctor
+    const { error: delErr } = await supabase
       .from('clinic_schedules')
-      .select('id')
+      .delete()
       .eq('doctors_id', doctorId)
-      .eq('date', scheduleData.date)
-      .single();
-    
-    if (existingSchedule) {
-      // Update existing schedule
-      const { error } = await supabase
-        .from('clinic_schedules')
-        .update(scheduleData)
-        .eq('id', existingSchedule.id);
-      
-      if (error) {
-        console.error('Error updating schedule:', error);
-        alert('Error saving schedule. Please try again.');
-        return;
-      }
-    } else {
-      // Insert new schedule
-      const { error } = await supabase
-        .from('clinic_schedules')
-        .insert([scheduleData]);
-      
-      if (error) {
-        console.error('Error inserting schedule:', error);
-        alert('Error saving schedule. Please try again.');
-        return;
-      }
+      .is('date', null);
+    if (delErr) {
+      alert('Failed to clear existing schedule.');
+      console.error(delErr);
+      return;
     }
-    
-    alert('Doctor schedule saved successfully!');
-    renderScheduleCalendar();
-    
-  } catch (error) {
-    console.error('Error saving doctor schedule:', error);
-    alert('Error saving schedule. Please try again.');
+
+    if (selected.length === 0) {
+      alert('Weekly schedule cleared.');
+      return;
+    }
+
+    const rows = selected.map(s => ({
+      doctors_id: doctorId,
+      day_of_week: s.day_of_week,
+      available_time: s.available_time,
+      date: null,
+      appointments_id: null
+    }));
+
+    const { error: insErr } = await supabase
+      .from('clinic_schedules')
+      .insert(rows);
+    if (insErr) {
+      alert('Failed to save weekly schedule.');
+      console.error(insErr);
+      return;
+    }
+
+    alert('Weekly schedule saved successfully!');
+  } catch (e) {
+    console.error('Error saving weekly schedule:', e);
+    alert('Error saving weekly schedule.');
+  }
+};
+
+window.clearWeeklySchedule = async function() {
+  const doctorId = document.getElementById('schedule-doctor-select').value;
+  if (!doctorId) {
+    alert('Please select a doctor first.');
+    return;
+  }
+  if (!confirm('Clear all weekly availability for this doctor?')) return;
+  try {
+    const { error } = await supabase
+      .from('clinic_schedules')
+      .delete()
+      .eq('doctors_id', doctorId)
+      .is('date', null);
+    if (error) {
+      alert('Failed to clear schedule.');
+      console.error(error);
+      return;
+    }
+    initWeeklyScheduleBuilder();
+    alert('Weekly schedule cleared.');
+  } catch (e) {
+    console.error('Error clearing weekly schedule:', e);
+    alert('Error clearing weekly schedule.');
   }
 };
 // Helper function to check and update all foreign key references
