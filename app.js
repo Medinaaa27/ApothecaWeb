@@ -291,7 +291,7 @@ async function loadCompletedAppointments() {
   }
 
   if (doctorFilter) {
-    query = query.eq('subtitle', doctorFilter);
+    query = query.eq('doctors.name', doctorFilter);
   }
 
   const [appointmentsRes, patientsRes, prescRes, billingRes] = await Promise.all([
@@ -425,7 +425,7 @@ async function loadPatientDetails(userId, appointments) {
   // Fetch doctor's notes for these appointments (by appointment id)
   const appointmentIds = (appsToRender || []).map(a => a.id);
   let doctorNotes = [];
-  if (appointmentIds.length > 0) {
+    if (appointmentIds.length > 0) {
     try {
       const { data: notes } = await supabase
         .from('doctor_notes')
@@ -433,7 +433,7 @@ async function loadPatientDetails(userId, appointments) {
         .in('appointments_id', appointmentIds)
         .eq('clinic_id', clinicId);
       doctorNotes = notes || [];
-    } catch (e) {
+  } catch (e) {
       doctorNotes = [];
     }
   }
@@ -592,7 +592,7 @@ async function managePatient(app) {
     <div style="text-align: left; font-size: 0.95rem; line-height: 1.4;">
       ${name}<br><br>
       <strong>Patient Name: </strong>${app.patient_name}<br>
-      <strong>Relation with the user?</strong> ${app.patient_identity || 'N/A' }<br>
+      <strong>Relation with the user:</strong> ${app.patient_identity || 'N/A' }<br>
       <strong>Address: </strong><small style="font-size: 0.85rem;"> ${address}</small><br>
       <strong>Gender:</strong> ${gender}<br>
       <strong>Age:</strong> ${app.patient_age}<br>
@@ -1015,7 +1015,7 @@ window.showScheduleForm = async function() {
   document.getElementById('doctors-list').style.display = 'none';
   
   await populateScheduleDoctorDropdown();
-  initWeeklyScheduleBuilder();
+  initSimpleScheduler();
 };
 
 window.hideAddDoctorForm = function() {
@@ -1340,86 +1340,53 @@ async function populateScheduleDoctorDropdown() {
   }
 }
 
-// Weekly schedule builder state
-let weeklySelectedDoctorId = null;
-
-function initWeeklyScheduleBuilder() {
-  weeklySelectedDoctorId = null;
+// Build simple dropdown scheduler
+function initSimpleScheduler() {
   const select = document.getElementById('schedule-doctor-select');
-  const container = document.getElementById('weekly-days');
-  const intervalSelect = document.getElementById('schedule-interval');
-  if (!select || !container || !intervalSelect) return;
+  const startSel = document.getElementById('slot-start');
+  const daySel = document.getElementById('schedule-day-select');
+  const dateInput = document.getElementById('schedule-date');
+  const repeatSel = document.getElementById('repeat-months');
+  if (!select || !startSel || !daySel || !dateInput || !repeatSel) return;
 
-  container.innerHTML = '';
-  const days = [
-    { id: 1, label: 'Sunday' },
-    { id: 2, label: 'Monday' },
-    { id: 3, label: 'Tuesday' },
-    { id: 4, label: 'Wednesday' },
-    { id: 5, label: 'Thursday' },
-    { id: 6, label: 'Friday' },
-    { id: 7, label: 'Saturday' }
-  ];
-
-  days.forEach(d => {
-    const dayDiv = document.createElement('div');
-    dayDiv.className = 'weekly-day';
-    dayDiv.innerHTML = `
-      <div class="weekly-day-header">
-        <label>
-          <input type="checkbox" class="day-enabled" data-day="${d.id}"> ${d.label}
-        </label>
-      </div>
-      <div class="weekly-day-body" id="day-body-${d.id}" style="display:none;">
-        <div class="time-range-row">
-          <label>Start</label>
-          <input type="time" class="time-start" data-day="${d.id}" value="09:00">
-          <label>End</label>
-          <input type="time" class="time-end" data-day="${d.id}" value="17:00">
-          <button class="apply-range" data-day="${d.id}">Apply</button>
-        </div>
-        <div class="slots" id="slots-${d.id}"></div>
-      </div>
-    `;
-    container.appendChild(dayDiv);
-  });
-
-  container.addEventListener('change', (e) => {
-    const target = e.target;
-    if (target.classList.contains('day-enabled')) {
-      const day = target.getAttribute('data-day');
-      const body = document.getElementById(`day-body-${day}`);
-      if (body) body.style.display = target.checked ? '' : 'none';
+  // Populate 24h times in 5-minute steps for start dropdown with 12-hour labels
+  const times = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 5) {
+      const hh = h.toString().padStart(2, '0');
+      const mm = m.toString().padStart(2, '0');
+      times.push(`${hh}:${mm}`);
     }
+  }
+  startSel.innerHTML = times
+    .map(t => `<option value="${t}">${formatTimeTo12Hr(t)}</option>`)
+    .join('');
+  startSel.value = '09:00';
+
+  // Date → day-of-week detection
+  dateInput.addEventListener('change', function() {
+    const v = this.value;
+    if (!v) return;
+    const d = new Date(v + 'T00:00:00');
+    // Map Monday=1 ... Sunday=7
+    const jsDow = d.getDay(); // 0..6 (Sun..Sat)
+    const dow = jsDow === 0 ? 7 : jsDow; // Sun->7, Mon->1, ... Sat->6
+    daySel.value = String(dow);
   });
 
-  container.addEventListener('click', (e) => {
-    const btn = e.target.closest('.apply-range');
-    if (!btn) return;
-    const day = btn.getAttribute('data-day');
-    const startEl = container.querySelector(`.time-start[data-day="${day}"]`);
-    const endEl = container.querySelector(`.time-end[data-day="${day}"]`);
-    const slotsEl = document.getElementById(`slots-${day}`);
-    const intervalMinutes = parseInt(document.getElementById('schedule-interval').value, 10) || 30;
-    if (!startEl || !endEl || !slotsEl) return;
-    const start = startEl.value;
-    const end = endEl.value;
-    if (!start || !end || start >= end) {
-      alert('Please provide a valid start and end time.');
-      return;
+  // No end time; single-slot per time
+
+  // Load existing for selected doctor + day/date
+  select.addEventListener('change', loadSimpleSchedulePreview);
+  daySel.addEventListener('change', loadSimpleSchedulePreview);
+  dateInput.addEventListener('change', loadSimpleSchedulePreview);
+
+  // If admin selects "Only this week pattern", clear date and day-of-week
+  repeatSel.addEventListener('change', function() {
+    if (this.value === '0') {
+      dateInput.value = '';
+      daySel.value = '';
     }
-    // Generate discrete time slots
-    const slots = generateTimeSlots(start, end, intervalMinutes);
-    slotsEl.innerHTML = slots.map(t => `
-      <label class="slot-item">
-        <input type="checkbox" class="slot-checkbox" data-day="${day}" value="${t}"> ${t}
-      </label>
-    `).join('');
-  });
-
-  select.addEventListener('change', async function() {
-    weeklySelectedDoctorId = this.value || null;
-    await loadWeeklySchedule();
   });
 }
 
@@ -1438,126 +1405,198 @@ function generateTimeSlots(start, end, intervalMinutes) {
   return slots;
 }
 
-async function loadWeeklySchedule() {
-  const container = document.getElementById('weekly-days');
-  if (!weeklySelectedDoctorId || !container) return;
-  // Clear selections
-  container.querySelectorAll('.day-enabled').forEach(c => { c.checked = false; });
-  container.querySelectorAll('[id^="day-body-"]').forEach(b => { b.style.display = 'none'; });
-  container.querySelectorAll('.slots').forEach(s => { s.innerHTML = ''; });
+async function loadSimpleSchedulePreview() {
+  const doctorId = document.getElementById('schedule-doctor-select').value;
+  const daySel = document.getElementById('schedule-day-select');
+  const dateInput = document.getElementById('schedule-date');
+  if (!doctorId || !daySel) return;
+  const dayVal = daySel.value ? parseInt(daySel.value, 10) : null;
+  const dateVal = dateInput.value || null;
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('clinic_schedules')
-      .select('id, day_of_week, available_time')
-      .eq('doctors_id', weeklySelectedDoctorId)
-      .is('date', null);
-    if (error) {
-      console.error('Failed to load weekly schedule:', error);
-      return;
+      .select('available_time')
+      .eq('doctors_id', doctorId);
+    if (dateVal) {
+      query = query.eq('date', dateVal);
+    } else if (dayVal) {
+      query = query.is('date', null).eq('day_of_week', dayVal);
     }
-    const byDay = new Map();
-    (data || []).forEach(row => {
-      if (!byDay.has(row.day_of_week)) byDay.set(row.day_of_week, []);
-      byDay.get(row.day_of_week).push(row.available_time);
-    });
-    byDay.forEach((times, day) => {
-      const enabled = container.querySelector(`.day-enabled[data-day="${day}"]`);
-      const body = document.getElementById(`day-body-${day}`);
-      const slotsEl = document.getElementById(`slots-${day}`);
-      if (enabled && body && slotsEl) {
-        enabled.checked = true;
-        body.style.display = '';
-        slotsEl.innerHTML = times.map(t => `
-          <label class="slot-item">
-            <input type="checkbox" class="slot-checkbox" data-day="${day}" value="${t}" checked> ${t}
-          </label>
-        `).join('');
-      }
-    });
-  } catch (e) {
-    console.error('Error loading weekly schedule:', e);
-  }
+    const { data, error } = await query;
+    if (error) return;
+    // Optional: could display preview somewhere; skipping UI preview for brevity
+  } catch {}
 }
 
-window.saveWeeklySchedule = async function() {
+window.saveSimpleSchedule = async function() {
   const doctorId = document.getElementById('schedule-doctor-select').value;
   if (!doctorId) {
     alert('Please select a doctor first.');
+      return;
+    }
+  const dayVal = document.getElementById('schedule-day-select').value;
+  const dateVal = document.getElementById('schedule-date').value || null;
+  const start = document.getElementById('slot-start').value;
+  const repeatMonths = parseInt(document.getElementById('repeat-months').value, 10) || 0;
+
+  // When repeatMonths === 0 (only this week pattern), allow day/date to be empty
+  if (repeatMonths !== 0 && !dayVal && !dateVal) {
+    alert('Please select a day of the week or a specific date.');
     return;
   }
-  const container = document.getElementById('weekly-days');
-  const selected = [];
-  container.querySelectorAll('.slot-checkbox:checked').forEach(cb => {
-    const day = parseInt(cb.getAttribute('data-day'), 10);
-    selected.push({ day_of_week: day, available_time: cb.value });
-  });
+  if (!start) {
+    alert('Please select an available time.');
+    return;
+  }
+
+  // Determine day_of_week from date if provided
+  let dayOfWeek = dayVal ? parseInt(dayVal, 10) : null;
+  if (!dayOfWeek && dateVal) {
+    const jsDow = new Date(dateVal + 'T00:00:00').getDay();
+    dayOfWeek = jsDow === 0 ? 7 : jsDow; // Monday=1 ... Sunday=7
+  }
+
+  // Build list of dates to insert
+  const targetDates = [];
+  function toLocalDateString(dt) {
+    const y = dt.getFullYear();
+    const m = (dt.getMonth() + 1).toString().padStart(2, '0');
+    const d = dt.getDate().toString().padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  if (dateVal) {
+    targetDates.push(dateVal);
+  } else if (repeatMonths === 0) {
+    // Save all days within the current week (Mon..Sun)
+    const today = new Date();
+    const jsDow = today.getDay(); // 0..6 (Sun..Sat)
+    const daysSinceMonday = (jsDow + 6) % 7; // Monday=0, Sunday=6
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - daysSinceMonday);
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(monday);
+      dt.setDate(monday.getDate() + i);
+      targetDates.push(toLocalDateString(dt));
+    }
+  } else if (repeatMonths > 0) {
+    // Generate all matching weekdays for the current month and the next (repeatMonths-1) months
+    const today = new Date();
+    const startOfRange = new Date(today.getFullYear(), today.getMonth(), today.getDate()); // start from today (this week forward)
+    const endMonthIndex = today.getMonth() + (repeatMonths - 1);
+    const endBoundary = new Date(today.getFullYear(), endMonthIndex + 1, 0); // last day of last covered month
+    let cursor = new Date(startOfRange);
+    while (cursor <= endBoundary) {
+      const jsDow = cursor.getDay(); // 0..6 (Sun..Sat)
+      const mapped = jsDow === 0 ? 7 : jsDow; // Monday=1 ... Sunday=7
+      if (mapped === dayOfWeek) {
+        targetDates.push(toLocalDateString(cursor));
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
 
   try {
-    // Remove existing weekly schedule (date IS NULL) for this doctor
-    const { error: delErr } = await supabase
+    // Clear existing slots for this scope
+    // If a specific date is chosen, clear existing for that date/time; if weekly, clear for every generated date
+    if (targetDates.length > 0) {
+      for (const d of targetDates) {
+        const { error: delErr } = await supabase
+          .from('clinic_schedules')
+          .delete()
+          .eq('doctors_id', doctorId)
+          .eq('available_time', start)
+          .eq('date', d);
+        if (delErr) {
+          alert('Failed to clear existing slots for some dates.');
+          console.error(delErr);
+    return;
+  }
+      }
+    } else {
+      // No targetDates implies weekly pattern without date window (unlikely path)
+      const { error: delErr } = await supabase
       .from('clinic_schedules')
-      .delete()
-      .eq('doctors_id', doctorId)
-      .is('date', null);
-    if (delErr) {
-      alert('Failed to clear existing schedule.');
-      console.error(delErr);
+        .delete()
+        .eq('doctors_id', doctorId)
+        .is('date', null)
+        .eq('day_of_week', dayOfWeek)
+        .eq('available_time', start);
+      if (delErr) {
+        alert('Failed to clear existing weekly slot.');
+        console.error(delErr);
       return;
     }
-
-    if (selected.length === 0) {
-      alert('Weekly schedule cleared.');
-      return;
+  }
+  
+    // Insert rows: one per target date, or a weekly pattern row when no specific dates
+    let rows = [];
+    if (targetDates.length > 0) {
+      rows = targetDates.map(d => {
+        const jsDow = new Date(d + 'T00:00:00').getDay();
+        const mappedDow = jsDow === 0 ? 7 : jsDow; // Monday=1 ... Sunday=7
+        return {
+          doctors_id: doctorId,
+          day_of_week: mappedDow,
+          available_time: start,
+          date: d,
+          appointments_id: null
+        };
+      });
+    } else {
+      rows = [{
+        doctors_id: doctorId,
+        day_of_week: dayOfWeek,
+        available_time: start,
+        date: null,
+        appointments_id: null
+      }];
     }
 
-    const rows = selected.map(s => ({
-      doctors_id: doctorId,
-      day_of_week: s.day_of_week,
-      available_time: s.available_time,
-      date: null,
-      appointments_id: null
-    }));
-
-    const { error: insErr } = await supabase
-      .from('clinic_schedules')
-      .insert(rows);
+    const { error: insErr } = await supabase.from('clinic_schedules').insert(rows);
     if (insErr) {
-      alert('Failed to save weekly schedule.');
+      alert('Failed to save schedule.');
       console.error(insErr);
       return;
     }
-
-    alert('Weekly schedule saved successfully!');
+    
+    alert('Schedule saved successfully!');
   } catch (e) {
-    console.error('Error saving weekly schedule:', e);
-    alert('Error saving weekly schedule.');
+    console.error('Error saving schedule:', e);
+    alert('Error saving schedule.');
   }
 };
 
-window.clearWeeklySchedule = async function() {
+window.clearSimpleSchedule = async function() {
   const doctorId = document.getElementById('schedule-doctor-select').value;
   if (!doctorId) {
     alert('Please select a doctor first.');
+        return;
+      }
+  const dayVal = document.getElementById('schedule-day-select').value;
+  const dateVal = document.getElementById('schedule-date').value || null;
+  if (!dayVal && !dateVal) {
+    alert('Select a day of week or a date to clear.');
     return;
   }
-  if (!confirm('Clear all weekly availability for this doctor?')) return;
+  if (!confirm('Clear availability for the selected day/date?')) return;
   try {
-    const { error } = await supabase
-      .from('clinic_schedules')
-      .delete()
-      .eq('doctors_id', doctorId)
-      .is('date', null);
-    if (error) {
+    let del = supabase.from('clinic_schedules').delete().eq('doctors_id', doctorId);
+    if (dateVal) {
+      del = del.eq('date', dateVal);
+    } else {
+      del = del.is('date', null).eq('day_of_week', parseInt(dayVal, 10));
+    }
+    const { error } = await del;
+      if (error) {
       alert('Failed to clear schedule.');
       console.error(error);
-      return;
-    }
-    initWeeklyScheduleBuilder();
-    alert('Weekly schedule cleared.');
+        return;
+      }
+    alert('Selected schedule cleared.');
   } catch (e) {
-    console.error('Error clearing weekly schedule:', e);
-    alert('Error clearing weekly schedule.');
+    console.error('Error clearing schedule:', e);
+    alert('Error clearing schedule.');
   }
 };
 // Helper function to check and update all foreign key references

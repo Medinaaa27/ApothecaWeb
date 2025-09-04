@@ -169,21 +169,46 @@
             <option value="">Select a doctor...</option>
           </select>
         </div>
-        <div id="weekly-schedule-builder" class="weekly-schedule-builder">
+        <div id="simple-scheduler" class="simple-scheduler">
           <div class="form-group">
-            <label for="schedule-interval">Time slot interval:</label>
-            <select id="schedule-interval">
-              <option value="15">15 minutes</option>
-              <option value="30" selected>30 minutes</option>
-              <option value="60">60 minutes</option>
+            <label for="schedule-date">Specific date (optional):</label>
+            <input type="date" id="schedule-date" />
+          </div>
+          <div class="form-group">
+            <label for="schedule-day-select">Day of the week:</label>
+            <select id="schedule-day-select">
+              <option value="">Select day...</option>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+              <option value="7">Sunday</option>
             </select>
           </div>
-          <div id="weekly-days"></div>
+          <div class="form-group">
+            <label for="repeat-months">Repeat for next months:</label>
+            <select id="repeat-months">
+              <option value="0">Only this week pattern</option>
+              <option value="1">This month</option>
+              <option value="2" selected>This and next month</option>
+              <option value="3">Next 3 months</option>
+              <option value="6">Next 6 months</option>
+              <option value="12">Next 12 months</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="slot-start">Available Time:</label>
+              <select id="slot-start"></select>
+            </div>
+          </div>
         </div>
         
         <div class="form-buttons">
-          <button onclick="saveWeeklySchedule()">Save Weekly Schedule</button>
-          <button onclick="clearWeeklySchedule()" style="background-color: #dc3545; color: #fff;">Clear Weekly Schedule</button>
+          <button onclick="saveSimpleSchedule()">Save Schedule</button>
+          <button onclick="clearSimpleSchedule()" style="background-color: #dc3545; color: #fff;">Clear Selected</button>
           <button onclick="hideScheduleForm()">Cancel</button>
         </div>
       </div>
