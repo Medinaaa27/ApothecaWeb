@@ -1819,7 +1819,7 @@ window.showCalendarDayAppointments = function(dateStr, appointmentCount) {
   // Get appointments for this specific day
   let query = supabase
     .from('appointments')
-    .select('*')
+    .select('*, doctors(name)')
     .eq('clinic_id', clinicId)
     .eq('date', dateStr);
   
@@ -1845,6 +1845,7 @@ async function showCalendarAppointmentsWindow(dateStr, appointments) {
     document.body.appendChild(windowElement);
   }
   
+  //Calendar Pop up details
   const dateDisplay = new Date(dateStr).toLocaleDateString();
   let appointmentsList = '';
   
@@ -1857,7 +1858,8 @@ async function showCalendarAppointmentsWindow(dateStr, appointments) {
         <div class="appointment-time">${time12Hr}</div>
         <div class="appointment-details">
           <strong>${name}</strong><br>
-          <small>Doctor: ${app.subtitle || 'Unknown'}</small><br>
+          <small>Patient Name: ${app.patient_name || 'No patient name provided'}</small><br>
+          <small>Doctor: ${app.doctors?.name || app.subtitle || 'Unknown'}</small><br>
           <small>Status: ${app.status}</small><br>
           <small>Reason: ${app.reason || 'No reason provided'}</small>
         </div>
