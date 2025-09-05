@@ -4,6 +4,8 @@ let selectedAppointment = null;
 let sortDesc = true;
 let sortDescAccom = true;
 let freezeAutoRefresh = false;
+let clinicType = null;
+let isMedicalClinic = false;
 
 // Progress bar
 function startLoadingBar() {
@@ -26,10 +28,18 @@ async function loadClinicName() {
   const heading = document.getElementById('clinic-name');
   const { data, error } = await supabase
     .from('clinics')
-    .select('name')
+    .select('name, type')
     .eq('id', clinicId)
     .single();
-  heading.innerText = error || !data ? 'Clinic Name Unavailable' : data.name;
+  if (error || !data) {
+    heading.innerText = 'Clinic Name Unavailable';
+    clinicType = null;
+    isMedicalClinic = false;
+  } else {
+    heading.innerText = data.name;
+    clinicType = data.type || null;
+    isMedicalClinic = (data?.type || '').toLowerCase() === 'medical';
+  }
 }
 
 function formatTimeTo12Hr(timeStr) {
@@ -462,6 +472,12 @@ async function loadPatientDetails(userId, appointments) {
 
   for (const app of appsToRender) {
     const time12Hr = formatTimeTo12Hr(app.time);
+    const vitalSignsBlock = isMedicalClinic ? `
+      <div style="margin-top:8px;">
+        <h4>Vital Signs</h4>
+        <div id="vs-view-${app.id}" style="font-size:0.95rem;color:#333;"></div>
+      </div>
+    ` : '';
 
   const matchedPrescriptions = prescriptions.filter(p =>
     p.appointment_id === app.id
@@ -506,6 +522,7 @@ async function loadPatientDetails(userId, appointments) {
           <input type="file" id="lab-result-file-${app.id}" accept=".jpg,.jpeg,.png,.pdf" />
           <button onclick="uploadLabResult('${app.id}')">Upload Lab Result</button>
         </div>
+        ${vitalSignsBlock}
       </div>
       <div>
         ${matchedBillings.length
@@ -528,6 +545,7 @@ async function loadPatientDetails(userId, appointments) {
     `;
     content.appendChild(div);
     try { await listLabResultsForAppointment(app.id); } catch {}
+    if (isMedicalClinic) { try { await loadVitalSignsForAppointment(app.id, userId); } catch (e) { console.warn('Vitals load error', e); } }
   }
 }
 
@@ -566,6 +584,76 @@ async function getAuthUserIdForStorage() {
   } catch (e) {
     console.warn('Unable to ensure Supabase auth user:', e);
     return null;
+  }
+}
+
+// Vital signs: save and load
+async function saveVitalSigns() {
+  try {
+    if (!selectedAppointment) { alert('No appointment selected.'); return; }
+    const height = parseFloat(document.getElementById('vs-height')?.value || '') || null;
+    const weight = parseFloat(document.getElementById('vs-weight')?.value || '') || null;
+    const bp = (document.getElementById('vs-bp')?.value || '').trim() || null;
+    const hr = document.getElementById('vs-hr')?.value ? parseInt(document.getElementById('vs-hr').value, 10) : null;
+    const temp = parseFloat(document.getElementById('vs-temp')?.value || '') || null;
+    const rr = document.getElementById('vs-rr')?.value ? parseInt(document.getElementById('vs-rr').value, 10) : null;
+    const statusEl = document.getElementById('vs-status');
+    if (statusEl) statusEl.textContent = 'Saving...';
+
+    const payload = {
+      user_id: selectedAppointment.user_id,
+      height_cm: height,
+      weight_kg: weight,
+      blood_pressure: bp,
+      heart_rate: hr,
+      temperature_c: temp,
+      respiratory_rate: rr,
+      appointment_id: selectedAppointment.id,
+      clinic_id: clinicId
+    };
+
+    const { error } = await supabase.from('vital_signs').insert([payload]);
+    if (error) {
+      console.error('Save vital signs error:', error);
+      if (statusEl) statusEl.textContent = 'Failed to save vital signs.';
+      alert('Failed to save vital signs.');
+      return;
+    }
+    if (statusEl) statusEl.textContent = 'Vital signs saved.';
+    try { await loadVitalSignsForAppointment(selectedAppointment.id, selectedAppointment.user_id); } catch {}
+  } catch (e) {
+    console.error('saveVitalSigns error:', e);
+    alert('Error saving vital signs.');
+  }
+}
+
+async function loadVitalSignsForAppointment(appointmentId, userId) {
+  const target = document.getElementById(`vs-view-${appointmentId}`);
+  if (!target) return;
+  target.textContent = 'Loading vital signs...';
+  try {
+    const { data, error } = await supabase
+      .from('vital_signs')
+      .select('height_cm, weight_kg, bmi, blood_pressure, heart_rate, temperature_c, respiratory_rate, created_at')
+      .eq('appointment_id', appointmentId)
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) { target.textContent = 'No vital signs.'; return; }
+    if (!data) { target.textContent = 'No vital signs recorded.'; return; }
+    const parts = [];
+    if (data.height_cm != null) parts.push(`Height: ${data.height_cm} cm`);
+    if (data.weight_kg != null) parts.push(`Weight: ${data.weight_kg} kg`);
+    if (data.bmi != null) parts.push(`BMI: ${Number(data.bmi).toFixed(1)}`);
+    if (data.blood_pressure) parts.push(`BP: ${data.blood_pressure}`);
+    if (data.heart_rate != null) parts.push(`HR: ${data.heart_rate} bpm`);
+    if (data.temperature_c != null) parts.push(`Temp: ${data.temperature_c} °C`);
+    if (data.respiratory_rate != null) parts.push(`RR: ${data.respiratory_rate}`);
+    target.textContent = parts.join(' | ');
+  } catch (e) {
+    console.error('loadVitalSignsForAppointment error:', e);
+    target.textContent = 'Error loading vital signs';
   }
 }
 
@@ -629,6 +717,20 @@ async function managePatient(app) {
          <h3>Doctor's Notes</h3>
          <label>Clinical Notes</label>
          <textarea id="doctors-note-input" placeholder="Enter doctor's notes, observations, recommendations, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
+         ${isMedicalClinic ? `
+         <div style="margin-top: 12px;">
+           <h4>Vital Signs</h4>
+           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;">
+             <label>Height (cm)</label><input type="number" id="vs-height" step="0.1" min="0" placeholder="e.g. 170" />
+             <label>Weight (kg)</label><input type="number" id="vs-weight" step="0.1" min="0" placeholder="e.g. 65" />
+             <label>Blood Pressure</label><input type="text" id="vs-bp" placeholder="e.g. 120/80" />
+             <label>Heart Rate (bpm)</label><input type="number" id="vs-hr" min="0" placeholder="e.g. 72" />
+             <label>Temperature (°C)</label><input type="number" id="vs-temp" step="0.1" placeholder="e.g. 36.8" />
+             <label>Respiratory Rate</label><input type="number" id="vs-rr" min="0" placeholder="e.g. 16" />
+           </div>
+           <div id="vs-status" style="margin-top:6px;color:#6c757d;font-size:0.9rem;"></div>
+         </div>
+         ` : ''}
        </div>
        <div class="column">
          <h3>Billing of Appointment</h3>
@@ -689,18 +791,57 @@ window.completeAppointment = async function() {
   }
 
      // Check if prescription, billing, and doctor's note are filled
-   const prescName = document.getElementById('presc-name')?.value.trim();
-   const prescDetails = document.getElementById('presc-details')?.value.trim();
-   const billingTitle = document.getElementById('billing-title')?.value.trim();
-   const billingAmount = document.getElementById('billing-amount')?.value.trim();
-   const billingDue = document.getElementById('billing-due')?.value.trim();
-   const noteContent = document.getElementById('doctors-note-input')?.value.trim();
+  const prescName = document.getElementById('presc-name')?.value.trim();
+  const prescDetails = document.getElementById('presc-details')?.value.trim();
+  const billingTitle = document.getElementById('billing-title')?.value.trim();
+  const billingAmount = document.getElementById('billing-amount')?.value.trim();
+  const billingDue = document.getElementById('billing-due')?.value.trim();
+  const noteContent = document.getElementById('doctors-note-input')?.value.trim();
 
-   // Check if required fields are filled
-   if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent) {
-     alert("Please fill in prescription, billing, and doctor's note before completing the appointment.");
-     return;
-   }
+  // For medical clinics, vital signs must be filled before completion
+  let vitalsPayload = null;
+  if (isMedicalClinic) {
+    const vsHeightStr = document.getElementById('vs-height')?.value?.trim();
+    const vsWeightStr = document.getElementById('vs-weight')?.value?.trim();
+    const vsBp = document.getElementById('vs-bp')?.value?.trim();
+    const vsHrStr = document.getElementById('vs-hr')?.value?.trim();
+    const vsTempStr = document.getElementById('vs-temp')?.value?.trim();
+    const vsRrStr = document.getElementById('vs-rr')?.value?.trim();
+
+    if (!vsHeightStr || !vsWeightStr || !vsBp || !vsHrStr || !vsTempStr || !vsRrStr) {
+      alert('Please fill in all vital signs before completing the appointment.');
+      return;
+    }
+
+    vitalsPayload = {
+      user_id: selectedAppointment.user_id,
+      height_cm: parseFloat(vsHeightStr),
+      weight_kg: parseFloat(vsWeightStr),
+      blood_pressure: vsBp,
+      heart_rate: parseInt(vsHrStr, 10),
+      temperature_c: parseFloat(vsTempStr),
+      respiratory_rate: parseInt(vsRrStr, 10),
+      appointment_id: selectedAppointment.id,
+      clinic_id: clinicId
+    };
+
+    if (
+      Number.isNaN(vitalsPayload.height_cm) ||
+      Number.isNaN(vitalsPayload.weight_kg) ||
+      Number.isNaN(vitalsPayload.heart_rate) ||
+      Number.isNaN(vitalsPayload.temperature_c) ||
+      Number.isNaN(vitalsPayload.respiratory_rate)
+    ) {
+      alert('Please enter valid numeric values for vital signs.');
+      return;
+    }
+  }
+
+  // Check if required fields are filled
+  if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent) {
+    alert("Please fill in prescription, billing, and doctor's note before completing the appointment.");
+    return;
+  }
 
   // Confirm completion
   if (!confirm('Are you sure you want to complete this appointment? This will move it to the completed appointments history.')) {
@@ -800,21 +941,23 @@ window.completeAppointment = async function() {
     };
 
          // Execute remaining database operations
-     const [noteRes, prescRes, billRes, apptRes] = await Promise.all([
-       supabase.from('doctor_notes').insert([doctorNote]),
-       supabase.from('prescriptions').insert([prescription]),
-       supabase.from('billings').insert([billing]),
-       supabase.from('appointments').update(appointmentUpdate).eq('id', appointmentId)
-     ]);
+    const operations = [
+      supabase.from('doctor_notes').insert([doctorNote]),
+      supabase.from('prescriptions').insert([prescription]),
+      supabase.from('billings').insert([billing])
+    ];
+    if (isMedicalClinic && vitalsPayload) {
+      operations.push(supabase.from('vital_signs').insert([vitalsPayload]));
+    }
+    operations.push(supabase.from('appointments').update(appointmentUpdate).eq('id', appointmentId));
 
-     if (noteRes.error || prescRes.error || billRes.error || apptRes.error) {
-       alert('Failed to complete appointment. Please try again.');
-       console.error('Doctor note error:', noteRes.error);
-       console.error('Prescription error:', prescRes.error);
-       console.error('Billing error:', billRes.error);
-       console.error('Appointment error:', apptRes.error);
-       return;
-     }
+    const results = await Promise.all(operations);
+    const firstError = results.find(r => r && r.error);
+    if (firstError && firstError.error) {
+      alert('Failed to complete appointment. Please try again.');
+      console.error('Completion error:', firstError.error);
+      return;
+    }
 
     // Success - show confirmation and redirect
     alert('Appointment completed successfully! The patient has been moved to completed appointments.');
@@ -1918,12 +2061,12 @@ window.generateReport = async function() {
 async function loadDailyStats(date, doctorFilter = '') {
   let query = supabase
     .from('appointments')
-    .select('*')
+    .select('*, doctors(name)')
     .eq('clinic_id', clinicId)
     .eq('date', date);
   
   if (doctorFilter) {
-    query = query.eq('subtitle', doctorFilter);
+    query = query.eq('doctors.name', doctorFilter);
   }
   
   const { data: appointments } = await query;
@@ -1972,7 +2115,7 @@ async function loadDoctorReports(date, doctorFilter = '') {
       .from('appointments')
       .select('*, doctors(name)')
       .eq('clinic_id', clinicId)
-      .eq('subtitle', doctor.name)
+      .eq('doctors.name', doctor.name)
       .eq('date', date);
     
     const completedAppointments = appointments?.filter(apt => apt.status === 'completed') || [];
@@ -1998,17 +2141,71 @@ async function loadDoctorReports(date, doctorFilter = '') {
 }
 
 window.exportReport = function() {
-  // Simple export functionality
   const reportDate = document.getElementById('report-date').value || new Date().toISOString().split('T')[0];
-  const content = `Clinic Report for ${reportDate}\nGenerated on ${new Date().toLocaleString()}`;
-  
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `clinic-report-${reportDate}.txt`;
-  a.click();
-  window.URL.revokeObjectURL(url);
+  const doctorFilter = document.getElementById('report-doctor-filter').value;
+
+  (async () => {
+    let query = supabase
+      .from('appointments')
+      .select('id, date, time, status, reason, patient_name, doctors(name)')
+      .eq('clinic_id', clinicId)
+      .eq('date', reportDate);
+    if (doctorFilter) {
+      query = query.eq('doctors.name', doctorFilter);
+    }
+    const { data: appts } = await query;
+
+    const now = new Date();
+    const genDate = now.toLocaleDateString('en-US');
+    const genTime = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    const total = (appts || []).length;
+    const detailBlocks = (appts || []).map(a => {
+      const t12 = formatTimeTo12Hr(a.time);
+      const docName = a.doctors?.name || 'Unknown';
+      const patient = a.patient_name || 'N/A';
+      const status = a.status || 'N/A';
+      const reason = a.reason || '';
+      return `
+${patient}
+Doctor: ${docName}
+Time Schedule: ${t12}
+status: ${status}
+Reason: ${reason}
+`;
+    }).join('');
+
+    const textContent = `Clinic Report for ${reportDate}
+Generated on ${genDate}, ${genTime}
+
+Total Appointments of the day: ${total}
+${detailBlocks}`;
+
+    // Build a printable HTML and trigger print (user can Save as PDF)
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Clinic Report ${reportDate}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; white-space: pre-wrap; font-size: 12pt; }
+  .header { margin-bottom: 12px; }
+  .block { margin: 10px 0; }
+</style>
+</head>
+<body>
+${textContent.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch (_) {} }, 300);
+  })();
 };
 
 // Patient Filter Functions
@@ -2262,6 +2459,7 @@ window.confirmAndApprove = confirmAndApprove;
 window.confirmAndDecline = confirmAndDecline;
 window.updateAppointmentStatus = updateAppointmentStatus;
 window.uploadLabResult = uploadLabResult;
+window.saveVitalSigns = saveVitalSigns;
 
 // Update billing status in database
 window.updateBillingStatus = async function() {

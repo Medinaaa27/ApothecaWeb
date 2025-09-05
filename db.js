@@ -11,5 +11,6 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 3d362882-da27-4d88-ad4d-fdf62d2372d8 = Arzadon Clinic
 7a9f15f6-7c2f-439e-ac48-1025bc380f4e = Megason Diagnostic Clinic
 87e1863f-16cc-405c-a6bd-f2c841cccc3d = San Roque Medical Clinic
+7582c5a2-2f9e-4f07-947d-d07e9faec431 = GLEXAN Animal Bite Center ABC Alabang Muntinlupa
 */
 export const clinicId = '0b95522c-7287-42ef-a6f9-3b587c33ee20'; 
