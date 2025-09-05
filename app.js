@@ -501,6 +501,11 @@ async function loadPatientDetails(userId, appointments) {
           ? matchedNotes.map(n => `<div><strong>Doctor's Notes:</strong><br>${n.content}</div>`).join('<br>')
           : 'No doctors notes'}
         <br><br>
+        <div>
+          <label>Laboratory Results (jpg, png, pdf)</label><br>
+          <input type="file" id="lab-result-file-${app.id}" accept=".jpg,.jpeg,.png,.pdf" />
+          <button onclick="uploadLabResult('${app.id}')">Upload Lab Result</button>
+        </div>
       </div>
       <div>
         ${matchedBillings.length
@@ -515,9 +520,14 @@ async function loadPatientDetails(userId, appointments) {
               </div>
             `).join('<br>')
           : 'No billing'}
+        <div style="margin-top: 8px;">
+          <div id="lab-upload-status-${app.id}" style="margin-top: 8px; font-size: 0.9rem; color: #6c757d;"></div>
+          <div id="lab-current-files-${app.id}" style="margin-top: 8px;"></div>
+        </div>
       </div>
     `;
     content.appendChild(div);
+    try { await listLabResultsForAppointment(app.id); } catch {}
   }
 }
 
@@ -663,6 +673,12 @@ async function managePatient(app) {
 
 
   showPage('details', { manageMode: true });
+  // After rendering, load existing lab files for this appointment
+  try {
+    await listLabResultsForAppointment(app.id);
+  } catch (e) {
+    console.warn('Unable to list lab results:', e);
+  }
 }
 
 // Complete Appointment Function
@@ -815,6 +831,8 @@ window.completeAppointment = async function() {
 
       showPage('details', { manageMode: true });
       await loadPatientDetails(userId, userHistory || []);
+      // Refresh lab files list if the same appointment is still selected
+      try { await listLabResultsForAppointment(appointmentId); } catch {}
     } catch (e) {
       // Fallback to Patients page if loading history fails
       showPage('details');
@@ -2149,6 +2167,93 @@ if (checkAuth()) {
   setupRealtimeSubscription();
 }
 
+// ================= LAB RESULTS STORAGE =================
+
+// Upload a lab result file to Supabase Storage and link it to the appointment
+window.uploadLabResult = async function (appointmentId) {
+  const fileInput = document.getElementById(`lab-result-file-${appointmentId}`);
+  if (!fileInput || fileInput.files.length === 0) {
+    alert("Please choose a file first.");
+    return;
+  }
+  const file = fileInput.files[0];
+  const fileExt = (file.name.split('.').pop() || '').toLowerCase();
+  const fileName = file.name; // keep original filename
+  const filePath = `${appointmentId}/${fileName}`;
+
+  try {
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('lab_results')
+      .upload(filePath, file, { upsert: true }); // upsert keeps same name and overwrites if it exists
+
+    if (uploadError) {
+      alert("Upload failed: " + uploadError.message);
+      console.error(uploadError);
+      return;
+    }
+
+    // Get public URL (or signed URL if bucket is private)
+    const { data } = supabase.storage.from('lab_results').getPublicUrl(filePath);
+    const publicUrl = data.publicUrl;
+
+    // If the uploaded file is PDF or image (png/jpg/jpeg), push its URL to appointments.file_url
+    const mime = (file.type || '').toLowerCase();
+    const isPdfOrImage =
+      fileExt === 'pdf' || fileExt === 'png' || fileExt === 'jpg' || fileExt === 'jpeg' ||
+      mime === 'application/pdf' || mime.startsWith('image/');
+    if (isPdfOrImage) {
+      const { error: dbError } = await supabase
+        .from('appointments')
+        .update({ file_url: publicUrl })
+        .eq('id', appointmentId);
+      if (dbError) {
+        alert("File uploaded but failed to link in database.");
+        console.error(dbError);
+      }
+    }
+
+    alert("Lab result uploaded successfully!");
+    await listLabResultsForAppointment(appointmentId);
+  } catch (e) {
+    console.error("Upload error:", e);
+    alert("Unexpected error while uploading.");
+  }
+};
+
+// List all lab result files for an appointment
+async function listLabResultsForAppointment(appointmentId) {
+  const container = document.getElementById(`lab-current-files-${appointmentId}`);
+  if (!container) return;
+
+  try {
+    const { data, error } = await supabase.storage
+      .from('lab_results')
+      .list(appointmentId + '/');
+
+    if (error) {
+      console.error("Error listing lab results:", error);
+      container.innerHTML = "No lab results found.";
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      container.innerHTML = "No lab results uploaded.";
+      return;
+    }
+
+    const fileLinks = data.map(file => {
+      const { data: pub } = supabase.storage.from('lab_results').getPublicUrl(`${appointmentId}/${file.name}`);
+      return `<a href="${pub.publicUrl}" target="_blank">${file.name}</a>`;
+    });
+
+    container.innerHTML = `<strong>Uploaded Lab Results:</strong><br>${fileLinks.join('<br>')}`;
+  } catch (e) {
+    console.error("Error loading lab results:", e);
+    container.innerHTML = "Error loading lab results.";
+  }
+}
+
 // Expose to HTML
 window.showPage = showPage;
 window.managePatient = managePatient;
@@ -2156,6 +2261,7 @@ window.submitManagement = submitManagement;
 window.confirmAndApprove = confirmAndApprove;
 window.confirmAndDecline = confirmAndDecline;
 window.updateAppointmentStatus = updateAppointmentStatus;
+window.uploadLabResult = uploadLabResult;
 
 // Update billing status in database
 window.updateBillingStatus = async function() {
