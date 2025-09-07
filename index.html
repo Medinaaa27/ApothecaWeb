@@ -54,6 +54,35 @@
     <!-- Details Page -->
     <div id="details" class="page">
       <h2 id="details-title">Patient Details</h2>
+      
+      <!-- Patient Details Filters (shown when viewing specific patient) -->
+      <div id="patient-details-filters" class="filter-container" style="display: none;">
+        <div class="filter-row">
+          <div class="filter-group">
+            <label for="patient-doctor-filter">Doctor:</label>
+            <select id="patient-doctor-filter">
+              <option value="">All Doctors</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="patient-appointment-date-filter">Date:</label>
+            <input type="date" id="patient-appointment-date-filter" />
+          </div>
+          <div class="filter-group">
+            <label for="patient-billing-status-filter">Billing Status:</label>
+            <select id="patient-billing-status-filter">
+              <option value="">All Statuses</option>
+              <option value="paid">Paid</option>
+              <option value="unpaid">Unpaid</option>
+            </select>
+          </div>
+          <div class="filter-group filter-buttons">
+            <button onclick="applyPatientDetailsFilters()" class="filter-btn primary">Apply Filters</button>
+            <button onclick="clearPatientDetailsFilters()" class="filter-btn secondary">Clear</button>
+          </div>
+        </div>
+      </div>
+      
       <div id="details-content"></div>
 
       <!-- This section will be hidden when viewing a specific patient -->
@@ -71,25 +100,8 @@
                 />
               </div>
               <div class="filter-group">
-                <label for="patient-status-filter">Status:</label>
-                <select id="patient-status-filter">
-                  <option value="">All Status</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </div>
-              <div class="filter-group">
                 <label for="patient-date-filter">Date:</label>
                 <input type="date" id="patient-date-filter" />
-              </div>
-            </div>
-            <div class="filter-row">
-              <div class="filter-group">
-                <label for="patient-doctor-filter">Doctor:</label>
-                <select id="patient-doctor-filter">
-                  <option value="">All Doctors</option>
-                </select>
               </div>
               <div class="filter-group">
                 <label for="patient-gender-filter">Gender:</label>
@@ -99,9 +111,9 @@
                   <option value="Female">Female</option>
                 </select>
               </div>
-              <div class="filter-group">
-                <button onclick="applyPatientFilters()" style="margin-top: 20px;">Apply Filters</button>
-                <button onclick="clearPatientFilters()" style="margin-top: 20px; background-color: #6c757d;">Clear</button>
+              <div class="filter-group filter-buttons">
+                <button onclick="applyPatientFilters()" class="filter-btn primary">Apply Filters</button>
+                <button onclick="clearPatientFilters()" class="filter-btn secondary">Clear</button>
               </div>
             </div>
           </div>
@@ -116,7 +128,7 @@
         <h2>Doctors Management</h2>
         <div>
           <button id="add-doctor-btn" onclick="showAddDoctorForm()">Add New Doctor</button>
-          <button id="schedule-doctor-btn" onclick="showScheduleForm()">Schedule Doctor</button>
+          <button id="schedule-doctor-btn" onclick="showScheduleForm()">Quick Assign</button>
         </div>
       </div>
       
@@ -154,9 +166,17 @@
           </select>
         </div>
         
+        <!-- Edit Doctor Schedule Section -->
+        <div class="form-group">
+          <label>Edit Doctor Schedule:</label>
+          <div id="doctor-schedule-calendar" class="doctor-schedule-calendar">
+            <!-- Calendar will be dynamically generated here -->
+          </div>
+        </div>
+        
         <div class="form-buttons">
           <button onclick="saveDoctorEdit()">Save Changes</button>
-          <button onclick="cancelDoctorEdit()">Cancel</button>
+          <button onclick="cancelDoctorEdit()">Back</button>
         </div>
       </div>
       
@@ -172,12 +192,24 @@
         <div id="simple-scheduler" class="simple-scheduler">
           <div class="form-group">
             <label for="schedule-date">Specific date (optional):</label>
-            <input type="date" id="schedule-date" />
+            <input type="date" id="schedule-date" min="" />
+          </div>
+          <div class="form-group">
+            <label for="repeat-months">Repeat for next months:</label>
+            <select id="repeat-months">
+              <option value="1">This month</option>
+              <option value="2">This and next month</option>
+              <option value="3">Next 3 months</option>
+              <option value="6">Next 6 months</option>
+              <option value="12">Next 12 months</option>
+              <option value="select-month" selected>Select Month...</option>
+            </select>
           </div>
           <div class="form-group">
             <label for="schedule-day-select">Day of the week:</label>
             <select id="schedule-day-select">
               <option value="">Select day...</option>
+              <option value="next-7-days">Next 7 days</option>
               <option value="1">Monday</option>
               <option value="2">Tuesday</option>
               <option value="3">Wednesday</option>
@@ -185,17 +217,6 @@
               <option value="5">Friday</option>
               <option value="6">Saturday</option>
               <option value="7">Sunday</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="repeat-months">Repeat for next months:</label>
-            <select id="repeat-months">
-              <option value="0">Only this week pattern</option>
-              <option value="1">This month</option>
-              <option value="2" selected>This and next month</option>
-              <option value="3">Next 3 months</option>
-              <option value="6">Next 6 months</option>
-              <option value="12">Next 12 months</option>
             </select>
           </div>
           <div class="form-row">
@@ -209,7 +230,7 @@
         <div class="form-buttons">
           <button onclick="saveSimpleSchedule()">Save Schedule</button>
           <button onclick="clearSimpleSchedule()" style="background-color: #dc3545; color: #fff;">Clear Selected</button>
-          <button onclick="hideScheduleForm()">Cancel</button>
+          <button onclick="hideScheduleForm()">Back</button>
         </div>
       </div>
       
@@ -220,11 +241,6 @@
     <div id="calendar" class="page">
       <div class="appointments-header">
         <h2>Appointment Calendar</h2>
-        <div>
-          <select id="calendar-doctor-filter">
-            <option value="">All Doctors</option>
-          </select>
-        </div>
       </div>
       <div class="calendar-container">
         <div class="calendar-header">
@@ -275,6 +291,37 @@
       </div>
     </div>
   </div>
-=  <script src="app.js" type="module"></script>
+
+  <!-- Schedule Management Popups -->
+  <!-- View/Delete Schedule Popup -->
+  <div id="schedule-view-popup" class="popup-overlay" style="display: none;">
+    <div class="popup-content">
+      <h3>Doctor Schedule</h3>
+      <div id="schedule-details">
+        <!-- Schedule details will be populated here -->
+      </div>
+      <div class="popup-buttons">
+        <button onclick="addMoreTime()" class="add-btn">Add More Time</button>
+        <button onclick="closeScheduleViewPopup()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Schedule Popup -->
+  <div id="schedule-add-popup" class="popup-overlay" style="display: none;">
+    <div class="popup-content">
+      <h3>Add Doctor Schedule</h3>
+      <div class="form-group">
+        <label for="schedule-time">Time:</label>
+        <input type="time" id="schedule-time" step="1800" />
+      </div>
+      <div class="popup-buttons">
+        <button onclick="addSchedule()" class="add-btn">Add Schedule</button>
+        <button onclick="closeScheduleAddPopup()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js" type="module"></script>
 </body>
 </html>

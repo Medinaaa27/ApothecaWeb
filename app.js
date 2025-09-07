@@ -70,6 +70,7 @@ function showPage(page, options = {}) {
       document.getElementById('details-content').innerHTML = '';
       document.getElementById('completed-list').style.display = '';
       document.getElementById('patient-list-section').style.display = '';
+      document.getElementById('patient-details-filters').style.display = 'none';
       loadCompletedAppointments();
     } else {
       document.getElementById('completed-list').style.display = 'none';
@@ -147,7 +148,7 @@ async function loadAppointments() {
     div.innerHTML = `
       <strong>User: ${name}</strong><br>
       <strong>Patient Name: ${app.patient_name}</strong><br><br>
-      Gender: ${gender}<br>
+      Gender: ${app.patient_gender}<br>
       Date: ${app.date}<br>
       Time: ${time12Hr}<br>
       Reason: ${app.reason}<br>
@@ -255,7 +256,7 @@ async function loadApprovedPatients() {
     div.innerHTML = `
       <strong>User: ${name}</strong><br>
       <strong>Patient Name: ${app.patient_name}</strong><br><br>
-      Gender: ${gender}<br>
+      Gender: ${app.patient_gender}<br>
       Age: ${app.patient_age}<br>
       Blood Type: ${app.blood_type || 'N/A'}<br>
       Date: ${app.date}<br>
@@ -279,29 +280,18 @@ async function loadCompletedAppointments() {
 
   // Get filter values
   const searchTerm = document.getElementById('patient-search')?.value?.toLowerCase() || '';
-  const statusFilter = document.getElementById('patient-status-filter')?.value || '';
   const dateFilter = document.getElementById('patient-date-filter')?.value || '';
-  const doctorFilter = document.getElementById('patient-doctor-filter')?.value || '';
   const genderFilter = document.getElementById('patient-gender-filter')?.value || '';
 
-  // Build query
+  // Build query - always show completed appointments
   let query = supabase
     .from('appointments')
     .select('*')
-    .eq('clinic_id', clinicId);
-
-  if (statusFilter) {
-    query = query.eq('status', statusFilter);
-  } else {
-    query = query.eq('status', 'completed');
-  }
+    .eq('clinic_id', clinicId)
+    .eq('status', 'completed');
 
   if (dateFilter) {
     query = query.eq('date', dateFilter);
-  }
-
-  if (doctorFilter) {
-    query = query.eq('doctors.name', doctorFilter);
   }
 
   const [appointmentsRes, patientsRes, prescRes, billingRes] = await Promise.all([
@@ -349,25 +339,7 @@ async function loadCompletedAppointments() {
     if (searchTerm && !patient.full_name.toLowerCase().includes(searchTerm)) continue;
     if (genderFilter && patient.gender !== genderFilter) continue;
 
-    // Check if at least one of this patient's appointments has matching prescription or billing
-    const hasMatch = apps.some(app => {
-      const appDate = new Date(app.date);
-
-      const prescMatch = prescriptions.some(p =>
-        p.user_id === userId &&
-        p.last_updated && isWithinOneDay(p.last_updated, appDate)
-      );
-
-      const billingMatch = billings.some(b =>
-        b.user_id === userId &&
-        b.due_date && isWithinOneDay(b.due_date, appDate)
-      );
-
-      return prescMatch || billingMatch;
-    });
-
-    if (!hasMatch) continue; // Skip patient if no match
-
+    // Show all patients who have completed appointments (removed the prescription/billing requirement)
     // Show patient as a list item
     const latestApp = apps[apps.length - 1];
     const time12Hr = formatTimeTo12Hr(latestApp.time);
@@ -408,13 +380,32 @@ async function loadPatientDetails(userId, appointments) {
   content.innerHTML = '';
   showPage('details', { manageMode: true });
 
+  // Store current patient ID for filter functions
+  window.currentPatientId = userId;
+
+  // Hide patient details filters when managing appointment
+  document.getElementById('patient-details-filters').style.display = 'none';
+  
+  // Store current filter values before repopulating dropdown
+  const currentDoctorFilter = document.getElementById('patient-doctor-filter')?.value || '';
+  const currentDateFilter = document.getElementById('patient-appointment-date-filter')?.value || '';
+  const currentBillingFilter = document.getElementById('patient-billing-status-filter')?.value || '';
+  
+  // Populate doctor filter dropdown
+  await populatePatientDoctorFilter();
+  
+  // Restore filter values after dropdown is populated
+  if (currentDoctorFilter) document.getElementById('patient-doctor-filter').value = currentDoctorFilter;
+  if (currentDateFilter) document.getElementById('patient-appointment-date-filter').value = currentDateFilter;
+  if (currentBillingFilter) document.getElementById('patient-billing-status-filter').value = currentBillingFilter;
+
   const [patientRes, prescRes, billingRes] = await Promise.all([
     supabase.from('patients').select('full_name, address').eq('id', userId).single(),
     supabase.from('prescriptions').select('*').eq('user_id', userId),
     supabase.from('billings').select('*').eq('user_id', userId)
   ]);
 
-  // Load the full appointment history for this patient within this clinic
+  // Load the full appointment history for this patient within this clinic (only completed appointments)
   let appsToRender = [];
   try {
     const { data: allApps } = await supabase
@@ -422,6 +413,7 @@ async function loadPatientDetails(userId, appointments) {
       .select('*, doctors(name)')
       .eq('clinic_id', clinicId)
       .eq('user_id', userId)
+      .eq('status', 'completed')
       .order('date', { ascending: true })
       .order('created_at', { ascending: true });
     appsToRender = allApps || [];
@@ -470,7 +462,39 @@ async function loadPatientDetails(userId, appointments) {
     return isoDateTime.split('T')[0];
   }
 
-  for (const app of appsToRender) {
+  // Apply filters to appointments
+  const doctorFilter = document.getElementById('patient-doctor-filter')?.value || '';
+  const dateFilter = document.getElementById('patient-appointment-date-filter')?.value || '';
+  const billingStatusFilter = document.getElementById('patient-billing-status-filter')?.value || '';
+
+  let filteredApps = appsToRender.filter(app => {
+    // Doctor filter - use partial string matching like patient name search
+    if (doctorFilter && app.doctors?.name && !app.doctors.name.toLowerCase().includes(doctorFilter.toLowerCase())) {
+      return false;
+    }
+    
+    // Date filter
+    if (dateFilter && app.date !== dateFilter) {
+      return false;
+    }
+    
+    // Billing status filter
+    if (billingStatusFilter) {
+      const matchedBillings = billings.filter(b => b.appointment_id === app.id);
+      if (matchedBillings.length === 0) {
+        // No billing record means unpaid
+        if (billingStatusFilter !== 'unpaid') return false;
+      } else {
+        // Check if any billing matches the status
+        const hasMatchingStatus = matchedBillings.some(b => b.status === billingStatusFilter);
+        if (!hasMatchingStatus) return false;
+      }
+    }
+    
+    return true;
+  });
+
+  for (const app of filteredApps) {
     const time12Hr = formatTimeTo12Hr(app.time);
     const vitalSignsBlock = isMedicalClinic ? `
       <div style="margin-top:8px;">
@@ -662,7 +686,11 @@ async function managePatient(app) {
   selectedAppointment = app;
   const { name, address, gender } = await getPatientInfo(app.user_id);
   const time12Hr = formatTimeTo12Hr(app.time);
-  const today = new Date().toISOString().split('T')[0];
+  
+  // Set minimum date to today in Philippine timezone (UTC+8) to prevent past date selection
+  const today = new Date();
+  const philippineTime = new Date(today.getTime() + (8 * 60 * 60 * 1000));
+  const todayString = philippineTime.toISOString().split('T')[0];
 
   // Load specialization names for mapping
   const specializationMap = await getSpecializationMap();
@@ -692,7 +720,7 @@ async function managePatient(app) {
       <strong>Patient Name: </strong>${app.patient_name}<br>
       <strong>Relation with the user:</strong> ${app.patient_identity || 'N/A' }<br>
       <strong>Address: </strong><small style="font-size: 0.85rem;"> ${address}</small><br>
-      <strong>Gender:</strong> ${gender}<br>
+      <strong>Gender:</strong> ${app.patient_gender}<br>
       <strong>Age:</strong> ${app.patient_age}<br>
       <strong>Blood Type:</strong> ${app.blood_type || 'N/A'}<br>
       <strong>Date:</strong> ${app.date}<br>
@@ -705,6 +733,29 @@ async function managePatient(app) {
   document.getElementById('patient-list-section').style.display = 'none';
 // insert data
   document.getElementById('details-content').innerHTML = `
+    <!-- Complete Appointment Button -->
+    <div style="margin-bottom: 20px; text-align: center;">
+      <button
+        onclick="completeAppointment()" 
+        style="
+          padding: 12px 24px;
+          background-color: #28a745;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          transition: all 0.3s ease;
+        "
+        onmouseover="this.style.backgroundColor='#218838'"
+        onmouseout="this.style.backgroundColor='#28a745'"
+      >
+        ✓ Complete Appointment
+      </button>
+    </div>
+    
     <div class="manage-columns">
       <div class="column">
         <h3>Prescription</h3>
@@ -739,7 +790,7 @@ async function managePatient(app) {
         <label>Billing Amount</label>
           <input type="number" id="billing-amount" value="${existingBillingData?.amount || ''}" placeholder="Enter amount" step="0.01" onchange="updateBillingField('amount')" />
         <label>Due Date</label>
-          <input type="date" id="billing-due" value="${existingBillingData?.due_date || ''}" min="${today}" onchange="updateBillingField('due_date')" />
+          <input type="date" id="billing-due" value="${existingBillingData?.due_date || ''}" min="${todayString}" onchange="updateBillingField('due_date')" />
         <label>Payment Status</label>
           <select id="billing-status" onchange="updateBillingStatus()">
             <option value="unpaid" ${existingBillingStatus === 'unpaid' ? 'selected' : ''}>Unpaid</option>
@@ -747,29 +798,6 @@ async function managePatient(app) {
             <option value="partial" ${existingBillingStatus === 'partial' ? 'selected' : ''}>Partial Payment</option>
         </select>
       </div>
-    </div>
-    
-     <!-- Complete Appointment Button -->
-    <div style="position: fixed; bottom: 20px; left: 20px; z-index: 100;">
-      <button
-        onclick="completeAppointment()" 
-        style="
-          padding: 12px 24px;
-          background-color: #28a745;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-          transition: all 0.3s ease;
-        "
-        onmouseover="this.style.backgroundColor='#218838'"
-        onmouseout="this.style.backgroundColor='#28a745'"
-      >
-        ✓ Complete Appointment
-      </button>
     </div>
   `;
 
@@ -1147,7 +1175,6 @@ async function loadDoctors() {
       </div>
       <div class="doctor-actions">
         <button class="edit-doctor-btn" onclick="editDoctor('${doctor.id}')">Edit</button>
-        <button class="delete-doctor-btn" onclick="deleteDoctor('${doctor.id}')">Delete</button>
       </div>
     `;
     list.appendChild(div);
@@ -1249,6 +1276,8 @@ window.editDoctor = async function(doctorId) {
   await populateSpecializationsDropdown('edit-doctor-specialization');
   document.getElementById('edit-doctor-specialization').value = doctor.specialization_id || '';
   
+  // Load doctor schedule calendar
+  await loadDoctorScheduleCalendar(doctorId);
 
   // Show the edit form and hide other elements
   document.getElementById('edit-doctor-form').style.display = 'block';
@@ -1501,6 +1530,33 @@ async function populateScheduleDoctorDropdown() {
   }
 }
 
+// Populate patient details doctor filter dropdown
+async function populatePatientDoctorFilter() {
+  const select = document.getElementById('patient-doctor-filter');
+  if (!select) return;
+  
+  // Clear existing options except "All Doctors"
+  select.innerHTML = '<option value="">All Doctors</option>';
+  
+  const { data: doctors, error } = await supabase
+    .from('doctors')
+    .select('id, name')
+    .eq('clinic_id', clinicId)
+    .order('name', { ascending: true });
+  
+  if (error) {
+    console.error('Failed to load doctors for patient filter:', error);
+    return;
+  }
+  
+  for (const doctor of (doctors || [])) {
+    const option = document.createElement('option');
+    option.value = doctor.name; // Use name for filtering
+    option.textContent = doctor.name;
+    select.appendChild(option);
+  }
+}
+
 // Build simple dropdown scheduler
 function initSimpleScheduler() {
   const select = document.getElementById('schedule-doctor-select');
@@ -1510,10 +1566,17 @@ function initSimpleScheduler() {
   const repeatSel = document.getElementById('repeat-months');
   if (!select || !startSel || !daySel || !dateInput || !repeatSel) return;
 
-  // Populate 24h times in 5-minute steps for start dropdown with 12-hour labels
+  // Set minimum date to today to prevent past date selection (Philippine timezone)
+  const today = new Date();
+  // Convert to Philippine timezone (UTC+8)
+  const philippineTime = new Date(today.getTime() + (8 * 60 * 60 * 1000));
+  const todayString = philippineTime.toISOString().split('T')[0];
+  dateInput.min = todayString;
+
+  // Populate 24h times in 30-minute steps for start dropdown with 12-hour labels
   const times = [];
   for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 5) {
+    for (let m = 0; m < 60; m += 30) {
       const hh = h.toString().padStart(2, '0');
       const mm = m.toString().padStart(2, '0');
       times.push(`${hh}:${mm}`);
@@ -1524,31 +1587,90 @@ function initSimpleScheduler() {
     .join('');
   startSel.value = '09:00';
 
-  // Date → day-of-week detection
-  dateInput.addEventListener('change', function() {
-    const v = this.value;
-    if (!v) return;
-    const d = new Date(v + 'T00:00:00');
-    // Map Monday=1 ... Sunday=7
-    const jsDow = d.getDay(); // 0..6 (Sun..Sat)
-    const dow = jsDow === 0 ? 7 : jsDow; // Sun->7, Mon->1, ... Sat->6
-    daySel.value = String(dow);
+  // Day of week selection - clear specific date and handle special options
+  daySel.addEventListener('change', function() {
+    if (this.value) {
+      dateInput.value = '';
+      
+      // Handle special options
+      if (this.value === 'next-7-days') {
+        // Clear the selection of Repeat for next months when "Next 7 days" is chosen
+        repeatSel.value = 'select-month';
+      }
+    }
+    loadSimpleSchedulePreview();
   });
 
-  // No end time; single-slot per time
+  // Specific date selection - clear day of week and set to "Select day..."
+  dateInput.addEventListener('change', function() {
+    if (this.value) {
+      daySel.value = '';
+      // Update available times based on selected date
+      updateAvailableTimesForDate(this.value);
+    }
+    loadSimpleSchedulePreview();
+  });
+
+  // Repeat months selection - clear day of week when any option is selected
+  repeatSel.addEventListener('change', function() {
+    if (this.value && this.value !== 'select-month') {
+      // Clear the selection of Day of the week when any repeat option is selected
+      daySel.value = '';
+    }
+    loadSimpleSchedulePreview();
+  });
 
   // Load existing for selected doctor + day/date
   select.addEventListener('change', loadSimpleSchedulePreview);
   daySel.addEventListener('change', loadSimpleSchedulePreview);
   dateInput.addEventListener('change', loadSimpleSchedulePreview);
+}
 
-  // If admin selects "Only this week pattern", clear date and day-of-week
-  repeatSel.addEventListener('change', function() {
-    if (this.value === '0') {
-      dateInput.value = '';
-      daySel.value = '';
+// Update available times based on selected date to prevent past times
+function updateAvailableTimesForDate(selectedDate) {
+  const startSel = document.getElementById('slot-start');
+  if (!startSel) return;
+
+  // Use Philippine timezone (UTC+8)
+  const today = new Date();
+  const philippineTime = new Date(today.getTime() + (8 * 60 * 60 * 1000));
+  const selected = new Date(selectedDate);
+  const isToday = selected.toDateString() === philippineTime.toDateString();
+  
+  // Get current time in Philippine timezone
+  const currentHour = philippineTime.getHours();
+  const currentMinute = philippineTime.getMinutes();
+  
+  // Clear and repopulate times
+  const times = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hh = h.toString().padStart(2, '0');
+      const mm = m.toString().padStart(2, '0');
+      const timeString = `${hh}:${mm}`;
+      
+      // If it's today, only show future times
+      if (isToday) {
+        if (h > currentHour || (h === currentHour && m > currentMinute)) {
+          times.push(timeString);
+        }
+      } else {
+        // For future dates, show all times
+        times.push(timeString);
+      }
     }
-  });
+  }
+  
+  startSel.innerHTML = times
+    .map(t => `<option value="${t}">${formatTimeTo12Hr(t)}</option>`)
+    .join('');
+  
+  // Set default to first available time or 9:00 AM
+  if (times.length > 0) {
+    startSel.value = times[0];
+  } else {
+    startSel.value = '09:00';
+  }
 }
 
 function generateTimeSlots(start, end, intervalMinutes) {
@@ -1599,10 +1721,11 @@ window.saveSimpleSchedule = async function() {
   const dayVal = document.getElementById('schedule-day-select').value;
   const dateVal = document.getElementById('schedule-date').value || null;
   const start = document.getElementById('slot-start').value;
-  const repeatMonths = parseInt(document.getElementById('repeat-months').value, 10) || 0;
+  const repeatMonths = document.getElementById('repeat-months').value;
+  const repeatMonthsNum = parseInt(repeatMonths, 10) || 1;
 
-  // When repeatMonths === 0 (only this week pattern), allow day/date to be empty
-  if (repeatMonths !== 0 && !dayVal && !dateVal) {
+  // Require either day of week or specific date
+  if (!dayVal && !dateVal) {
     alert('Please select a day of the week or a specific date.');
     return;
   }
@@ -1626,19 +1749,30 @@ window.saveSimpleSchedule = async function() {
     const d = dt.getDate().toString().padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
-  if (dateVal) {
-    targetDates.push(dateVal);
-  } else if (repeatMonths === 0) {
-    // Save all days within the current week (Mon..Sun)
+  
+  // Handle "next-7-days" option
+  if (dayVal === 'next-7-days') {
+    // Get next 7 days starting from today in Philippine timezone
     const today = new Date();
-    const jsDow = today.getDay(); // 0..6 (Sun..Sat)
-    const daysSinceMonday = (jsDow + 6) % 7; // Monday=0, Sunday=6
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - daysSinceMonday);
+    const philippineTime = new Date(today.getTime() + (8 * 60 * 60 * 1000));
+    
+    // Generate dates for the next 7 days
     for (let i = 0; i < 7; i++) {
-      const dt = new Date(monday);
-      dt.setDate(monday.getDate() + i);
-      targetDates.push(toLocalDateString(dt));
+      const nextDate = new Date(philippineTime);
+      nextDate.setDate(philippineTime.getDate() + i);
+      targetDates.push(toLocalDateString(nextDate));
+    }
+  } else if (dateVal) {
+    targetDates.push(dateVal);
+  } else if (repeatMonths === 'select-month') {
+    // For "select-month", only save the next 7 days (used with "next-7-days")
+    const today = new Date();
+    const philippineTime = new Date(today.getTime() + (8 * 60 * 60 * 1000));
+    
+    for (let i = 0; i < 7; i++) {
+      const nextDate = new Date(philippineTime);
+      nextDate.setDate(philippineTime.getDate() + i);
+      targetDates.push(toLocalDateString(nextDate));
     }
   } else if (repeatMonths > 0) {
     // Generate all matching weekdays for the current month and the next (repeatMonths-1) months
@@ -1740,10 +1874,29 @@ window.clearSimpleSchedule = async function() {
     alert('Select a day of week or a date to clear.');
     return;
   }
-  if (!confirm('Clear availability for the selected day/date?')) return;
+  let confirmMessage = 'Clear availability for the selected day/date?';
+  if (dayVal === 'next-7-days') {
+    confirmMessage = 'Clear availability for the next 7 days?';
+  }
+  
+  if (!confirm(confirmMessage)) return;
   try {
     let del = supabase.from('clinic_schedules').delete().eq('doctors_id', doctorId);
-    if (dateVal) {
+    
+    if (dayVal === 'next-7-days') {
+      // Clear all dates in the next 7 days (Philippine timezone)
+      const today = new Date();
+      const philippineTime = new Date(today.getTime() + (8 * 60 * 60 * 1000));
+      
+      const next7Dates = [];
+      for (let i = 0; i < 7; i++) {
+        const nextDate = new Date(philippineTime);
+        nextDate.setDate(philippineTime.getDate() + i);
+        next7Dates.push(nextDate.toISOString().split('T')[0]);
+      }
+      
+      del = del.in('date', next7Dates);
+    } else if (dateVal) {
       del = del.eq('date', dateVal);
     } else {
       del = del.is('date', null).eq('day_of_week', parseInt(dayVal, 10));
@@ -1855,9 +2008,6 @@ async function loadCalendar() {
   
   document.getElementById('calendar-month-year').textContent = `${monthNames[currentMonth]} ${currentYear}`;
   
-  // Populate doctor filter dropdown
-  await populateCalendarDoctorFilter();
-  
   // Get appointments for the month
   const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
   const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
@@ -1892,7 +2042,9 @@ function renderCalendar(appointments) {
     const date = new Date(startDate);
     date.setDate(startDate.getDate() + i);
     
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = date.getFullYear() + '-' + 
+                   String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                   String(date.getDate()).padStart(2, '0');
     const dayAppointments = appointments.filter(apt => apt.date === dateStr);
     const isToday = date.toDateString() === new Date().toDateString();
     const isCurrentMonth = date.getMonth() === currentMonth;
@@ -1914,79 +2066,17 @@ function renderCalendar(appointments) {
   grid.innerHTML = html;
 }
 
-// Populate Calendar Doctor Filter
-async function populateCalendarDoctorFilter() {
-  const select = document.getElementById('calendar-doctor-filter');
-  if (!select) return;
-  
-  // Clear existing options except "All Doctors"
-  select.innerHTML = '<option value="">All Doctors</option>';
-  
-  // Get all doctors for this clinic
-  const { data: doctors, error } = await supabase
-    .from('doctors')
-    .select('id, name, specialization_id, specializations(name)')
-    .eq('clinic_id', clinicId)
-    .order('name', { ascending: true });
-  
-  if (error) {
-    console.error('Error loading doctors for calendar filter:', error);
-    return;
-  }
-  
-  // Add doctor options
-  for (const doctor of (doctors || [])) {
-    const specializationName = doctor.specializations?.name || 'No specialization';
-    const option = document.createElement('option');
-    option.value = doctor.name;
-    option.textContent = `${doctor.name} (${specializationName})`;
-    select.appendChild(option);
-  }
-  
-  // Add event listener for filter changes
-  select.removeEventListener('change', handleCalendarDoctorFilterChange);
-  select.addEventListener('change', handleCalendarDoctorFilterChange);
-}
-
-// Handle Calendar Doctor Filter Change
-async function handleCalendarDoctorFilterChange() {
-  const selectedDoctor = document.getElementById('calendar-doctor-filter').value;
-  
-  // Get appointments for the month with doctor filter
-  const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
-  const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
-  
-  let query = supabase
-    .from('appointments')
-    .select('*, doctors(name)')
-    .eq('clinic_id', clinicId)
-    .gte('date', startDate)
-    .lte('date', endDate);
-  
-  if (selectedDoctor) {
-    query = query.eq('doctors.name', selectedDoctor);
-  }
-  
-  const { data: appointments } = await query;
-  renderCalendar(appointments || []);
-}
 
 // Show Calendar Day Appointments
 window.showCalendarDayAppointments = function(dateStr, appointmentCount) {
   if (appointmentCount === 0) return;
   
-  const selectedDoctor = document.getElementById('calendar-doctor-filter').value;
-  
   // Get appointments for this specific day
-  let query = supabase
+  const query = supabase
     .from('appointments')
     .select('*, doctors(name)')
     .eq('clinic_id', clinicId)
     .eq('date', dateStr);
-  
-  if (selectedDoctor) {
-    query = query.eq('doctors.name', selectedDoctor);
-  }
   
   query.then(({ data: appointments }) => {
     if (appointments && appointments.length > 0) {
@@ -2007,7 +2097,7 @@ async function showCalendarAppointmentsWindow(dateStr, appointments) {
   }
   
   //Calendar Pop up details
-  const dateDisplay = new Date(dateStr).toLocaleDateString();
+  const dateDisplay = new Date(dateStr + 'T00:00:00').toLocaleDateString();
   let appointmentsList = '';
   
   for (const app of appointments) {
@@ -2029,16 +2119,34 @@ async function showCalendarAppointmentsWindow(dateStr, appointments) {
   }
   
   windowElement.innerHTML = `
-    <div class="calendar-appointments-header">
-      <h3>Appointments for ${dateDisplay}</h3>
-      <button class="close-btn" onclick="hideCalendarAppointmentsWindow()">×</button>
-    </div>
-    <div class="calendar-appointments-content">
-      ${appointmentsList}
+    <div class="calendar-appointments-modal">
+      <div class="calendar-appointments-header">
+        <h3>Appointments for ${dateDisplay}</h3>
+        <button class="close-btn" onclick="hideCalendarAppointmentsWindow()">×</button>
+      </div>
+      <div class="calendar-appointments-content">
+        ${appointmentsList}
+      </div>
     </div>
   `;
   
-  windowElement.style.display = 'block';
+  windowElement.style.display = 'flex';
+  
+  // Add click event to backdrop to close modal
+  windowElement.onclick = function(event) {
+    if (event.target === windowElement) {
+      hideCalendarAppointmentsWindow();
+    }
+  };
+  
+  // Add keyboard event listener to close modal with Escape key
+  const handleEscapeKey = function(event) {
+    if (event.key === 'Escape') {
+      hideCalendarAppointmentsWindow();
+      document.removeEventListener('keydown', handleEscapeKey);
+    }
+  };
+  document.addEventListener('keydown', handleEscapeKey);
 }
 
 // Hide Calendar Appointments Window
@@ -2046,6 +2154,8 @@ window.hideCalendarAppointmentsWindow = function() {
   const windowElement = document.getElementById('calendar-appointments-window');
   if (windowElement) {
     windowElement.style.display = 'none';
+    // Remove any existing event listeners
+    windowElement.onclick = null;
   }
 };
 
@@ -2078,7 +2188,7 @@ async function loadDailyStats(date, doctorFilter = '') {
     completed: appointments?.filter(apt => apt.status === 'completed').length || 0
   };
   
-  document.getElementById('report-date-display').textContent = new Date(date).toLocaleDateString();
+  document.getElementById('report-date-display').textContent = new Date(date + 'T00:00:00').toLocaleDateString();
   
   const statsContainer = document.getElementById('daily-stats');
   statsContainer.innerHTML = `
@@ -2215,11 +2325,31 @@ window.applyPatientFilters = function() {
 
 window.clearPatientFilters = function() {
   document.getElementById('patient-search').value = '';
-  document.getElementById('patient-status-filter').value = '';
   document.getElementById('patient-date-filter').value = '';
-  document.getElementById('patient-doctor-filter').value = '';
   document.getElementById('patient-gender-filter').value = '';
   loadCompletedAppointments();
+};
+
+// Patient Details Filter Functions
+window.applyPatientDetailsFilters = function() {
+  // Get the current patient ID from the URL or stored variable
+  const currentPatientId = window.currentPatientId;
+  if (currentPatientId) {
+    // Reload patient details (filter values will be preserved automatically)
+    loadPatientDetails(currentPatientId, []);
+  }
+};
+
+window.clearPatientDetailsFilters = function() {
+  document.getElementById('patient-doctor-filter').value = '';
+  document.getElementById('patient-appointment-date-filter').value = '';
+  document.getElementById('patient-billing-status-filter').value = '';
+  
+  // Reapply filters (which will show all appointments since filters are cleared)
+  const currentPatientId = window.currentPatientId;
+  if (currentPatientId) {
+    loadPatientDetails(currentPatientId, []);
+  }
 };
 
 
@@ -2554,4 +2684,316 @@ window.updateBillingField = async function(fieldName) {
     console.error(`Error in updateBillingField for ${fieldName}:`, error);
   }
 };
+
+// Doctor Schedule Management Functions
+let currentScheduleCalendar = {
+  doctorId: null,
+  currentDate: new Date(),
+  schedules: []
+};
+
+// Load Doctor Schedule Calendar
+async function loadDoctorScheduleCalendar(doctorId) {
+  currentScheduleCalendar.doctorId = doctorId;
+  currentScheduleCalendar.currentDate = new Date();
+  
+  // Load existing schedules for the doctor
+  await loadDoctorSchedules(doctorId);
+  
+  // Generate calendar HTML
+  generateScheduleCalendar();
+}
+
+// Load doctor schedules from database
+async function loadDoctorSchedules(doctorId) {
+  const { data, error } = await supabase
+    .from('clinic_schedules')
+    .select('*')
+    .eq('doctors_id', doctorId)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('Error loading doctor schedules:', error);
+    currentScheduleCalendar.schedules = [];
+    return;
+  }
+
+  currentScheduleCalendar.schedules = data || [];
+}
+
+// Generate calendar HTML
+function generateScheduleCalendar() {
+  const calendarContainer = document.getElementById('doctor-schedule-calendar');
+  if (!calendarContainer) return;
+
+  const currentDate = currentScheduleCalendar.currentDate;
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startDate = new Date(firstDay);
+  startDate.setDate(startDate.getDate() - firstDay.getDay());
+  
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  let calendarHTML = `
+    <div class="calendar-header">
+      <button class="calendar-nav-btn" onclick="navigateScheduleCalendar(-1)">‹ Previous</button>
+      <div class="calendar-month-year">${monthNames[month]} ${year}</div>
+      <button class="calendar-nav-btn" onclick="navigateScheduleCalendar(1)">Next ›</button>
+    </div>
+    <div class="calendar-grid">
+  `;
+  
+  // Add day headers
+  dayNames.forEach(day => {
+    calendarHTML += `<div class="calendar-day-header">${day}</div>`;
+  });
+  
+  // Add calendar days
+  const currentDateObj = new Date();
+  for (let i = 0; i < 42; i++) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + i);
+    
+    const isCurrentMonth = date.getMonth() === month;
+    const isToday = date.toDateString() === currentDateObj.toDateString();
+    const dateString = date.getFullYear() + '-' + 
+                      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                      String(date.getDate()).padStart(2, '0');
+    
+    // Check if this date has schedules
+    const hasSchedule = currentScheduleCalendar.schedules.some(schedule => 
+      schedule.date === dateString
+    );
+    
+    let dayClass = 'calendar-day';
+    if (!isCurrentMonth) dayClass += ' other-month';
+    if (isToday) dayClass += ' today';
+    if (hasSchedule) dayClass += ' scheduled';
+    
+    calendarHTML += `
+      <div class="${dayClass}" onclick="handleScheduleDayClick('${dateString}', ${hasSchedule})">
+        ${date.getDate()}
+      </div>
+    `;
+  }
+  
+  calendarHTML += '</div>';
+  calendarContainer.innerHTML = calendarHTML;
+}
+
+// Navigate calendar months
+window.navigateScheduleCalendar = function(direction) {
+  const newDate = new Date(currentScheduleCalendar.currentDate);
+  newDate.setMonth(newDate.getMonth() + direction);
+  currentScheduleCalendar.currentDate = newDate;
+  generateScheduleCalendar();
+};
+
+// Handle day click
+window.handleScheduleDayClick = function(dateString, hasSchedule) {
+  if (hasSchedule) {
+    // Show existing schedule popup
+    showScheduleViewPopup(dateString);
+  } else {
+    // Show add schedule popup
+    showScheduleAddPopup(dateString);
+  }
+};
+
+// Show schedule view popup
+function showScheduleViewPopup(dateString) {
+  const schedules = currentScheduleCalendar.schedules.filter(schedule => 
+    schedule.date === dateString
+  );
+  
+  if (schedules.length === 0) return;
+  
+  // Sort schedules by time from morning to evening
+  schedules.sort((a, b) => {
+    // Handle "All day" schedules - put them at the end
+    if (!a.available_time && !b.available_time) return 0;
+    if (!a.available_time) return 1;
+    if (!b.available_time) return -1;
+    
+    // Compare time strings (HH:MM format)
+    return a.available_time.localeCompare(b.available_time);
+  });
+  
+  const scheduleDetails = document.getElementById('schedule-details');
+  let detailsHTML = `<strong>Date: ${formatDate(dateString)}</strong><br><br>`;
+  
+  schedules.forEach(schedule => {
+    const time = schedule.available_time ? formatTime(schedule.available_time) : 'All day';
+    detailsHTML += `<div class="time-slot" onclick="deleteTimeSlot('${schedule.id}')">
+      <strong>Time:</strong> ${time}
+    </div>`;
+  });
+  
+  scheduleDetails.innerHTML = detailsHTML;
+  
+  // Store current date for adding more times
+  window.currentScheduleDate = dateString;
+  
+  document.getElementById('schedule-view-popup').style.display = 'flex';
+}
+
+// Show schedule add popup
+function showScheduleAddPopup(dateString) {
+  // Store current date for adding
+  window.currentScheduleDate = dateString;
+  
+  // Set default time to 9:00 AM
+  document.getElementById('schedule-time').value = '09:00';
+  
+  document.getElementById('schedule-add-popup').style.display = 'flex';
+}
+
+// Close schedule view popup
+window.closeScheduleViewPopup = function() {
+  document.getElementById('schedule-view-popup').style.display = 'none';
+};
+
+// Close schedule add popup
+window.closeScheduleAddPopup = function() {
+  document.getElementById('schedule-add-popup').style.display = 'none';
+};
+
+// Check if selected time conflicts with existing schedules
+function checkTimeConflict(dateString, timeString) {
+  // Get existing schedules for this date
+  const existingSchedules = currentScheduleCalendar.schedules.filter(schedule => 
+    schedule.date === dateString
+  );
+  
+  // Check if this time conflicts with existing schedules
+  return existingSchedules.some(schedule => {
+    if (!schedule.available_time) return false;
+    
+    const existingTime = new Date(`2000-01-01T${schedule.available_time}`);
+    const newTime = new Date(`2000-01-01T${timeString}`);
+    const timeDiff = Math.abs(newTime - existingTime) / (1000 * 60); // Difference in minutes
+    
+    return timeDiff <= 59; // Within 59 minutes
+  });
+}
+
+// Validate time input (must be 00 or 30 minutes)
+function validateTimeInput(timeString) {
+  if (!timeString) return false;
+  
+  const [hours, minutes] = timeString.split(':');
+  const minuteValue = parseInt(minutes);
+  
+  // Only allow 00 and 30 minutes
+  return minuteValue === 0 || minuteValue === 30;
+}
+
+// Add new schedule
+window.addSchedule = async function() {
+  const time = document.getElementById('schedule-time').value;
+  const date = window.currentScheduleDate;
+  
+  if (!time) {
+    alert('Please enter a time.');
+    return;
+  }
+  
+  // Validate time format (must be 00 or 30 minutes)
+  if (!validateTimeInput(time)) {
+    alert('Please select a time with 00 or 30 minutes only (e.g., 9:00, 9:30).');
+    return;
+  }
+  
+  // Check for time conflicts
+  if (checkTimeConflict(date, time)) {
+    alert('This time conflicts with an existing schedule. Please choose a different time (must be at least 60 minutes apart).');
+    return;
+  }
+  
+  if (!confirm(`Are you sure you want to add a schedule for ${formatDate(date)} at ${formatTime(time)}?`)) {
+    return;
+  }
+  
+  const jsDow = new Date(date + 'T00:00:00').getDay();
+  const scheduleData = {
+    doctors_id: currentScheduleCalendar.doctorId,
+    date: date,
+    available_time: time,
+    day_of_week: jsDow === 0 ? 7 : jsDow // Sunday=7, Monday=1, etc.
+  };
+  
+  const { error } = await supabase
+    .from('clinic_schedules')
+    .insert([scheduleData]);
+  
+  if (error) {
+    alert('Failed to add schedule. Please try again.');
+    console.error(error);
+  } else {
+    alert('Schedule added successfully!');
+    closeScheduleAddPopup();
+    await loadDoctorSchedules(currentScheduleCalendar.doctorId);
+    generateScheduleCalendar();
+  }
+};
+
+// Add more time to existing schedule
+window.addMoreTime = function() {
+  closeScheduleViewPopup();
+  showScheduleAddPopup(window.currentScheduleDate);
+};
+
+// Delete individual time slot
+window.deleteTimeSlot = async function(scheduleId) {
+  if (!confirm('Are you sure you want to delete this time slot?')) {
+    return;
+  }
+  
+  const { error } = await supabase
+    .from('clinic_schedules')
+    .delete()
+    .eq('id', scheduleId);
+  
+  if (error) {
+    alert('Failed to delete time slot. Please try again.');
+    console.error(error);
+  } else {
+    alert('Time slot deleted successfully!');
+    await loadDoctorSchedules(currentScheduleCalendar.doctorId);
+    generateScheduleCalendar();
+    
+    // Refresh the popup if it's still open
+    if (document.getElementById('schedule-view-popup').style.display === 'flex') {
+      showScheduleViewPopup(window.currentScheduleDate);
+    }
+  }
+};
+
+// Utility functions
+function formatDate(dateString) {
+  const date = new Date(dateString + 'T00:00:00');
+  return date.toLocaleDateString('en-US', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+}
+
+function formatTime(timeString) {
+  if (!timeString) return 'All day';
+  const [hours, minutes] = timeString.split(':');
+  const hour = parseInt(hours);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minutes} ${ampm}`;
+}
 

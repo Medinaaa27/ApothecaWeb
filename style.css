@@ -82,9 +82,6 @@ button:hover {
   background-color: #efeff6;
 }
 
-#sort-toggle, #accom-sort-toggle {
-  /* Optional: in case you use ids in HTML */
-}
 
 /* Appointments Styling */
 .appointment, .patient {
@@ -528,14 +525,18 @@ input[type="file"] {
 }
 
 .form-group {
-  margin-bottom: 15px;
+  margin-bottom: 10px;
+}
+
+.simple-scheduler .form-group {
+  margin-bottom: 8px;
 }
 
 .form-group label {
   display: block;
   font-weight: bold;
   color: #2c3e50;
-  margin-bottom: 5px;
+  margin-bottom: 3px;
 }
 
 .form-group input {
@@ -636,12 +637,12 @@ input[type="file"] {
 }
 
 .edit-doctor-btn {
-  background-color: #17a2b8;
+  background-color: #9534db;
   color: white;
 }
 
 .edit-doctor-btn:hover {
-  background-color: #138496;
+  background-color: #7311b9;
 }
 
 .delete-doctor-btn {
@@ -727,10 +728,11 @@ input[type="file"] {
 /* Filter Styles */
 .filter-container {
   background: #f8f9fa;
-  padding: 15px;
+  padding: 20px;
   border-radius: 8px;
   margin-bottom: 20px;
   border: 1px solid #e9ecef;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .filter-row {
@@ -743,6 +745,13 @@ input[type="file"] {
 .filter-group {
   flex: 1;
   min-width: 200px;
+}
+
+.filter-group.filter-buttons {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 150px;
 }
 
 .filter-group label {
@@ -759,6 +768,78 @@ input[type="file"] {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 0.9rem;
+}
+
+.filter-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 5px;
+}
+
+.filter-btn.primary {
+  background-color: #9534db;
+  color: white;
+}
+
+.filter-btn.primary:hover {
+  background-color: #7311b9;
+}
+
+.filter-btn.secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.filter-btn.secondary:hover {
+  background-color: #545b62;
+}
+
+/* Patient List Styles */
+#completed-list {
+  margin-top: 20px;
+}
+
+#completed-list .appointment {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid #e3e6ea;
+  border-radius: 12px;
+  padding: 8px 20px;
+  margin-bottom: 10px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+#completed-list .appointment:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-color: #9534db;
+}
+
+#completed-list .appointment strong {
+  color: #2c3e50;
+  font-size: 1rem;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Details Header */
+.details-header {
+  margin-bottom: 25px;
+}
+
+.details-header h3 {
+  color: #2c3e50;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e9ecef;
 }
 
 /* Calendar Styles */
@@ -920,12 +1001,26 @@ input[type="file"] {
 /* Doctor Actions Button Styles */
 
 .edit-doctor-btn {
-  background-color: #17a2b8 !important;
+  background-color: #9534db !important;
   margin-right: 5px;
 }
 
+/* Doctors Page Button Alignment */
+#doctors .appointments-header > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#doctors .appointments-header button {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
 .edit-doctor-btn:hover {
-  background-color: #138496 !important;
+  background-color: #7311b9 !important;
 }
 
 .delete-doctor-btn {
@@ -939,13 +1034,22 @@ input[type="file"] {
 /* Calendar Appointments Window Styles */
 .calendar-appointments-window {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.calendar-appointments-modal {
+  position: relative;
   background: white;
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  z-index: 1001;
   max-width: 90vw;
   max-height: 90vh;
   overflow: hidden;
@@ -967,6 +1071,27 @@ input[type="file"] {
 .calendar-appointments-header h3 {
   margin: 0;
   font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.calendar-appointments-header .close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.3s;
+}
+
+.calendar-appointments-header .close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .calendar-appointments-content {
@@ -1415,3 +1540,212 @@ input[type="file"] {
 .cancel-availability-btn:hover {
   background: #5a6268;
 }
+
+/* Doctor Schedule Calendar Styles */
+.doctor-schedule-calendar {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  background: white;
+  margin-top: 10px;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.calendar-nav-btn {
+  background: #9534db;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.calendar-nav-btn:hover {
+  background: #7311b9;
+}
+
+.calendar-month-year {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.calendar-day-header {
+  background: #f8f9fa;
+  padding: 10px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+}
+
+.calendar-day {
+  background: white;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.calendar-day:hover {
+  background: #e9ecef;
+}
+
+.calendar-day.other-month {
+  color: #ccc;
+  background: #f8f9fa;
+}
+
+.calendar-day.scheduled {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.calendar-day.scheduled::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background: #7a2bb8;
+  border-radius: 50%;
+}
+
+.calendar-day.today {
+  background: #d1ecf1;
+  color: #0c5460;
+  font-weight: 600;
+}
+
+/* Schedule Management Popups */
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.popup-content {
+  background: white;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.popup-content h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 20px;
+}
+
+.popup-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.popup-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.popup-buttons .delete-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.popup-buttons .delete-btn:hover {
+  background: #c82333;
+}
+
+.popup-buttons .add-btn {
+  background: #28a745;
+  color: white;
+}
+
+.popup-buttons .add-btn:hover {
+  background: #218838;
+}
+
+.popup-buttons button:not(.delete-btn):not(.add-btn) {
+  background: #6c757d;
+  color: white;
+}
+
+.popup-buttons button:not(.delete-btn):not(.add-btn):hover {
+  background: #5a6268;
+}
+
+#schedule-details {
+  margin: 15px 0;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border-left: 4px solid #007bff;
+}
+
+.time-slot {
+  margin: 10px 0;
+  padding: 10px;
+  background: white;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.time-slot:hover {
+  background: #f8f9fa;
+  border-left-color: #dc3545;
+}
+
+.time-slot:hover::after {
+  content: 'Click to delete';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: #dc3545;
+  font-weight: 500;
+}
+
+
