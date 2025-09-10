@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" type="image/png" href="apotheca_icon.png"/>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="container">
@@ -312,7 +313,22 @@
       <div class="report-container">
         <div class="report-header">
           <h3>Total Appointments Statistics</h3>
-          <span id="total-stats-period">All Time</span>
+          <div class="stats-controls">
+            <div class="date-range-controls">
+              <label for="stats-start-date">From:</label>
+              <input type="date" id="stats-start-date" />
+              <label for="stats-end-date">To:</label>
+              <input type="date" id="stats-end-date" />
+              <button onclick="applyStatsDateRange()" class="filter-btn primary">Apply Range</button>
+              <button onclick="clearStatsDateRange()" class="filter-btn secondary">Clear</button>
+              <div class="quick-ranges">
+                <button onclick="setQuickRange('thisMonth')" class="filter-btn secondary" style="font-size: 0.8rem;">This Month</button>
+                <button onclick="setQuickRange('lastMonth')" class="filter-btn secondary" style="font-size: 0.8rem;">Last Month</button>
+                <button onclick="setQuickRange('thisYear')" class="filter-btn secondary" style="font-size: 0.8rem;">This Year</button>
+              </div>
+            </div>
+            <span id="total-stats-period">All Time</span>
+          </div>
         </div>
         <div id="total-stats" class="report-stats">
           <!-- Total stats will be populated by JavaScript -->

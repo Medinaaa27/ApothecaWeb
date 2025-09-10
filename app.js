@@ -2550,8 +2550,78 @@ window.hideCalendarAppointmentsWindow = function() {
   }
 };
 
+// Chart cleanup function
+function cleanupCharts() {
+  if (window.chartInstances) {
+    Object.values(window.chartInstances).forEach(chart => {
+      if (chart && typeof chart.destroy === 'function') {
+        chart.destroy();
+      }
+    });
+    window.chartInstances = {};
+  }
+}
+
+// Date range functions for stats
+window.applyStatsDateRange = async function() {
+  const startDate = document.getElementById('stats-start-date').value;
+  const endDate = document.getElementById('stats-end-date').value;
+  const doctorFilter = document.getElementById('report-doctor-filter').value;
+  
+  // Validate date range
+  if (startDate && endDate && startDate > endDate) {
+    alert('Start date cannot be after end date. Please correct the date range.');
+    return;
+  }
+  
+  // Load stats with date range
+  await loadTotalAppointmentStats(doctorFilter, startDate || null, endDate || null);
+};
+
+window.clearStatsDateRange = async function() {
+  // Clear date inputs
+  document.getElementById('stats-start-date').value = '';
+  document.getElementById('stats-end-date').value = '';
+  
+  // Reload stats without date range
+  const doctorFilter = document.getElementById('report-doctor-filter').value;
+  await loadTotalAppointmentStats(doctorFilter);
+};
+
+window.setQuickRange = async function(rangeType) {
+  const today = new Date();
+  let startDate, endDate;
+  
+  switch (rangeType) {
+    case 'thisMonth':
+      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      break;
+    case 'lastMonth':
+      startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+      break;
+    case 'thisYear':
+      startDate = new Date(today.getFullYear(), 0, 1);
+      endDate = new Date(today.getFullYear(), 11, 31);
+      break;
+    default:
+      return;
+  }
+  
+  // Set the date inputs
+  document.getElementById('stats-start-date').value = startDate.toISOString().split('T')[0];
+  document.getElementById('stats-end-date').value = endDate.toISOString().split('T')[0];
+  
+  // Apply the range
+  await applyStatsDateRange();
+};
+
 // Report Functions
 window.generateReport = async function() {
+  // Clean up existing charts before generating new report
+  cleanupCharts();
+  
   const reportDate = document.getElementById('report-date').value || new Date().toISOString().split('T')[0];
   const doctorFilter = document.getElementById('report-doctor-filter').value;
   const filterMonth = document.getElementById('filter-month').value;
@@ -2571,16 +2641,21 @@ window.generateReport = async function() {
     monthlyAnchor = `${currentYear}-${filterMonth}-01`;
   }
   
-  await loadTotalAppointmentStats(doctorFilter);
+  // Get date range from stats controls if set
+  const statsStartDate = document.getElementById('stats-start-date').value;
+  const statsEndDate = document.getElementById('stats-end-date').value;
+  
+  await loadTotalAppointmentStats(doctorFilter, statsStartDate || null, statsEndDate || null);
   await loadDailyStats(reportDate, doctorFilter);
   await loadDoctorReports(reportDate, doctorFilter);
   await loadSalesMonthly(monthlyAnchor);
   await loadSalesAnnual(annualAnchor);
+  await loadSalesWeekly(monthlyAnchor);
   await loadAppointmentsMonthlyMatrix(monthlyAnchor);
   await loadAppointmentsAnnualMatrix(annualAnchor);
 };
 
-async function loadTotalAppointmentStats(doctorFilter = '') {
+async function loadTotalAppointmentStats(doctorFilter = '', startDate = null, endDate = null) {
   try {
     const statsContainer = document.getElementById('total-stats');
     const periodDisplay = document.getElementById('total-stats-period');
@@ -2596,6 +2671,14 @@ async function loadTotalAppointmentStats(doctorFilter = '') {
       query = query.eq('doctors.name', doctorFilter);
     }
     
+    // Apply date range filter if specified
+    if (startDate) {
+      query = query.gte('date', startDate);
+    }
+    if (endDate) {
+      query = query.lte('date', endDate);
+    }
+    
     const { data: appointments, error } = await query;
     
     if (error) {
@@ -2605,6 +2688,21 @@ async function loadTotalAppointmentStats(doctorFilter = '') {
     }
     
     const allAppointments = appointments || [];
+    
+    // Update period display based on filters
+    if (startDate && endDate) {
+      const start = new Date(startDate + 'T00:00:00');
+      const end = new Date(endDate + 'T00:00:00');
+      periodDisplay.textContent = `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+    } else if (startDate) {
+      const start = new Date(startDate + 'T00:00:00');
+      periodDisplay.textContent = `From ${start.toLocaleDateString()}`;
+    } else if (endDate) {
+      const end = new Date(endDate + 'T00:00:00');
+      periodDisplay.textContent = `Until ${end.toLocaleDateString()}`;
+    } else {
+      periodDisplay.textContent = 'All Time';
+    }
     
     // Calculate comprehensive statistics
     const totalAppointments = allAppointments.length;
@@ -2879,6 +2977,11 @@ async function loadSalesMonthly(reportDate) {
         </table>
       </div>
     `;
+
+    // Add pie charts for monthly sales
+    if (rows.length > 0) {
+      createSalesPieCharts(rows, 'monthly', 'sales-monthly');
+    }
   } catch (e) {
     console.error('loadSalesMonthly error:', e);
   }
@@ -2973,15 +3076,147 @@ async function loadSalesAnnual(reportDate) {
         </table>
       </div>
     `;
+
+    // Add pie charts for annual sales
+    if (rows.length > 0) {
+      createSalesPieCharts(rows, 'annual', 'sales-annual');
+    }
   } catch (e) {
     console.error('loadSalesAnnual error:', e);
   }
+}
+
+// Weekly Sales Report
+async function loadSalesWeekly(reportDate) {
+  try {
+    const root = ensureSalesContainers();
+    const container = root.weekly;
+    const d = new Date(reportDate + 'T00:00:00');
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const start = new Date(year, month, 1).toISOString().split('T')[0];
+    const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+    const [{ data: billings }, { data: appts }, specializationMap] = await Promise.all([
+      supabase
+        .from('billings')
+        .select('id, amount, due_date, status, appointment_id')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'paid')
+        .gte('due_date', start)
+        .lte('due_date', end),
+      supabase
+        .from('appointments')
+        .select('id, date, specialization_id, doctors(name)')
+        .eq('clinic_id', clinicId)
+        .gte('date', start)
+        .lte('date', end),
+      getSpecializationMap()
+    ]);
+
+    const apptById = new Map((appts || []).map(a => [a.id, a]));
+
+    // Aggregate by week + specialization + doctor
+    const rows = [];
+    for (const b of (billings || [])) {
+      const a = apptById.get(b.appointment_id);
+      if (!a) continue;
+      const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+      const dateKey = a.date || b.due_date || start;
+      const doctorName = (a.doctors && a.doctors.name) ? a.doctors.name : 'Unassigned';
+      
+      // Calculate week number within the month
+      const weekNumber = getWeekNumberInMonth(dateKey);
+      const weekLabel = `Week ${weekNumber}`;
+      
+      rows.push({ 
+        week: weekLabel, 
+        weekNumber: weekNumber,
+        date: dateKey,
+        specialization: specName, 
+        doctor: doctorName, 
+        amount: Number(b.amount) || 0 
+      });
+    }
+
+    // Group by week
+    const grouped = new Map();
+    for (const r of rows) {
+      const key = `${r.week}|${r.specialization}|${r.doctor}`;
+      grouped.set(key, (grouped.get(key) || 0) + r.amount);
+    }
+
+    // Build table
+    const sortedKeys = Array.from(grouped.keys()).sort((k1, k2) => {
+      const [w1, s1, dr1] = k1.split('|');
+      const [w2, s2, dr2] = k2.split('|');
+      const weekNum1 = parseInt(w1.replace('Week ', ''));
+      const weekNum2 = parseInt(w2.replace('Week ', ''));
+      return weekNum1 - weekNum2 || s1.localeCompare(s2) || dr1.localeCompare(dr2);
+    });
+
+    let total = 0;
+    const rowsHtml = sortedKeys.map(k => {
+      const [weekStr, spec, doc] = k.split('|');
+      const amt = grouped.get(k) || 0;
+      total += amt;
+      return `<tr><td>${weekStr}</td><td>${spec}</td><td>${doc}</td><td style="text-align:right;">₱${formatAmount(amt)}</td></tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Weekly Sales (by Week, Specialization & Doctor)</h3>
+          <span>${new Date(year, month, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span>
+        </div>
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Week</th>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Specialization</th>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Doctor</th>
+              <th style="text-align:right; border-bottom:1px solid #e9ecef; padding:8px;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || '<tr><td colspan="4" style="padding:8px; color:#6c757d;">No paid billings for this month.</td></tr>'}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="text-align:right; padding:8px; font-weight:600;">Total</td>
+              <td style="text-align:right; padding:8px; font-weight:600;">₱${formatAmount(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+
+    // Add pie charts for weekly sales
+    if (rows.length > 0) {
+      createWeeklySalesPieCharts(rows, 'weekly', 'sales-weekly');
+    }
+  } catch (e) {
+    console.error('loadSalesWeekly error:', e);
+  }
+}
+
+// Helper function to calculate week number within a month
+function getWeekNumberInMonth(dateStr) {
+  const date = new Date(dateStr + 'T00:00:00');
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+  const firstWeekStart = new Date(firstDay);
+  firstWeekStart.setDate(firstDay.getDate() - firstDay.getDay()); // Start from Sunday
+  
+  const diffTime = date - firstWeekStart;
+  const diffWeeks = Math.ceil(diffTime / (7 * 24 * 60 * 60 * 1000));
+  return Math.max(1, diffWeeks);
 }
 
 function ensureSalesContainers() {
   const reportsPage = document.getElementById('reports');
   let monthly = document.getElementById('sales-monthly');
   let annual = document.getElementById('sales-annual');
+  let weekly = document.getElementById('sales-weekly');
   if (!monthly) {
     monthly = document.createElement('div');
     monthly.id = 'sales-monthly';
@@ -2992,7 +3227,269 @@ function ensureSalesContainers() {
     annual.id = 'sales-annual';
     reportsPage.appendChild(annual);
   }
-  return { monthly, annual };
+  if (!weekly) {
+    weekly = document.createElement('div');
+    weekly.id = 'sales-weekly';
+    reportsPage.appendChild(weekly);
+  }
+  return { monthly, annual, weekly };
+}
+
+// Chart.js color palette
+const CHART_COLORS = [
+  '#9534db', '#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8', 
+  '#6c757d', '#fd7e14', '#20c997', '#6f42c1', '#e83e8c', '#20c997'
+];
+
+// Pie Chart Functions
+function createPieChart(canvasId, data, title, total) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+
+  // Destroy existing chart if it exists
+  if (window.chartInstances && window.chartInstances[canvasId]) {
+    window.chartInstances[canvasId].destroy();
+  }
+
+  const chart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: data.labels,
+      datasets: [{
+        data: data.values,
+        backgroundColor: CHART_COLORS.slice(0, data.labels.length),
+        borderColor: '#fff',
+        borderWidth: 2,
+        hoverBorderWidth: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            padding: 20,
+            usePointStyle: true,
+            font: {
+              size: 12
+            }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.parsed;
+              const percentage = ((value / total) * 100).toFixed(1);
+              return `${label}: ₱${formatAmount(value)} (${percentage}%)`;
+            }
+          }
+        }
+      },
+      animation: {
+        animateRotate: true,
+        animateScale: true
+      }
+    }
+  });
+
+  // Store chart instance for cleanup
+  if (!window.chartInstances) window.chartInstances = {};
+  window.chartInstances[canvasId] = chart;
+
+  return chart;
+}
+
+function createSalesPieCharts(rows, period, containerId) {
+  // Group by specialization
+  const specData = {};
+  const doctorData = {};
+  
+  rows.forEach(row => {
+    const amount = row.amount || 0;
+    
+    // Specialization data
+    if (!specData[row.specialization]) {
+      specData[row.specialization] = 0;
+    }
+    specData[row.specialization] += amount;
+    
+    // Doctor data
+    if (!doctorData[row.doctor]) {
+      doctorData[row.doctor] = 0;
+    }
+    doctorData[row.doctor] += amount;
+  });
+
+  // Calculate totals
+  const specTotal = Object.values(specData).reduce((sum, val) => sum + val, 0);
+  const doctorTotal = Object.values(doctorData).reduce((sum, val) => sum + val, 0);
+
+  // Prepare chart data
+  const specChartData = {
+    labels: Object.keys(specData),
+    values: Object.values(specData)
+  };
+
+  const doctorChartData = {
+    labels: Object.keys(doctorData),
+    values: Object.values(doctorData)
+  };
+
+  // Create charts HTML
+  const chartsHtml = `
+    <div class="charts-container">
+      <div class="chart-wrapper">
+        <div class="chart-title">Revenue by Specialization</div>
+        <div class="chart-container">
+          <canvas id="${containerId}-spec-chart"></canvas>
+        </div>
+        <div class="chart-total">Total: ₱${formatAmount(specTotal)}</div>
+      </div>
+      <div class="chart-wrapper">
+        <div class="chart-title">Revenue by Doctor</div>
+        <div class="chart-container">
+          <canvas id="${containerId}-doctor-chart"></canvas>
+        </div>
+        <div class="chart-total">Total: ₱${formatAmount(doctorTotal)}</div>
+      </div>
+    </div>
+  `;
+
+  // Add charts to container
+  const container = document.getElementById(containerId);
+  if (container) {
+    // Remove existing charts
+    const existingCharts = container.querySelector('.charts-container');
+    if (existingCharts) {
+      existingCharts.remove();
+    }
+    
+    // Add new charts
+    container.insertAdjacentHTML('beforeend', chartsHtml);
+
+    // Create the actual charts
+    if (specChartData.labels.length > 0) {
+      createPieChart(`${containerId}-spec-chart`, specChartData, 'Revenue by Specialization', specTotal);
+    }
+    
+    if (doctorChartData.labels.length > 0) {
+      createPieChart(`${containerId}-doctor-chart`, doctorChartData, 'Revenue by Doctor', doctorTotal);
+    }
+  }
+}
+
+function createWeeklySalesPieCharts(rows, period, containerId) {
+  // Group by week, specialization, and doctor
+  const weekData = {};
+  const specData = {};
+  const doctorData = {};
+  
+  rows.forEach(row => {
+    const amount = row.amount || 0;
+    
+    // Week data
+    if (!weekData[row.week]) {
+      weekData[row.week] = 0;
+    }
+    weekData[row.week] += amount;
+    
+    // Specialization data
+    if (!specData[row.specialization]) {
+      specData[row.specialization] = 0;
+    }
+    specData[row.specialization] += amount;
+    
+    // Doctor data
+    if (!doctorData[row.doctor]) {
+      doctorData[row.doctor] = 0;
+    }
+    doctorData[row.doctor] += amount;
+  });
+
+  // Calculate totals
+  const weekTotal = Object.values(weekData).reduce((sum, val) => sum + val, 0);
+  const specTotal = Object.values(specData).reduce((sum, val) => sum + val, 0);
+  const doctorTotal = Object.values(doctorData).reduce((sum, val) => sum + val, 0);
+
+  // Prepare chart data
+  const weekChartData = {
+    labels: Object.keys(weekData).sort((a, b) => {
+      const weekNum1 = parseInt(a.replace('Week ', ''));
+      const weekNum2 = parseInt(b.replace('Week ', ''));
+      return weekNum1 - weekNum2;
+    }),
+    values: Object.keys(weekData).sort((a, b) => {
+      const weekNum1 = parseInt(a.replace('Week ', ''));
+      const weekNum2 = parseInt(b.replace('Week ', ''));
+      return weekNum1 - weekNum2;
+    }).map(week => weekData[week])
+  };
+
+  const specChartData = {
+    labels: Object.keys(specData),
+    values: Object.values(specData)
+  };
+
+  const doctorChartData = {
+    labels: Object.keys(doctorData),
+    values: Object.values(doctorData)
+  };
+
+  // Create charts HTML
+  const chartsHtml = `
+    <div class="charts-container weekly">
+      <div class="chart-wrapper">
+        <div class="chart-title">Revenue by Week</div>
+        <div class="chart-container">
+          <canvas id="${containerId}-week-chart"></canvas>
+        </div>
+        <div class="chart-total">Total: ₱${formatAmount(weekTotal)}</div>
+      </div>
+      <div class="chart-wrapper">
+        <div class="chart-title">Revenue by Specialization</div>
+        <div class="chart-container">
+          <canvas id="${containerId}-spec-chart"></canvas>
+        </div>
+        <div class="chart-total">Total: ₱${formatAmount(specTotal)}</div>
+      </div>
+      <div class="chart-wrapper">
+        <div class="chart-title">Revenue by Doctor</div>
+        <div class="chart-container">
+          <canvas id="${containerId}-doctor-chart"></canvas>
+        </div>
+        <div class="chart-total">Total: ₱${formatAmount(doctorTotal)}</div>
+      </div>
+    </div>
+  `;
+
+  // Add charts to container
+  const container = document.getElementById(containerId);
+  if (container) {
+    // Remove existing charts
+    const existingCharts = container.querySelector('.charts-container');
+    if (existingCharts) {
+      existingCharts.remove();
+    }
+    
+    // Add new charts
+    container.insertAdjacentHTML('beforeend', chartsHtml);
+
+    // Create the actual charts
+    if (weekChartData.labels.length > 0) {
+      createPieChart(`${containerId}-week-chart`, weekChartData, 'Revenue by Week', weekTotal);
+    }
+    
+    if (specChartData.labels.length > 0) {
+      createPieChart(`${containerId}-spec-chart`, specChartData, 'Revenue by Specialization', specTotal);
+    }
+    
+    if (doctorChartData.labels.length > 0) {
+      createPieChart(`${containerId}-doctor-chart`, doctorChartData, 'Revenue by Doctor', doctorTotal);
+    }
+  }
 }
 
 function formatAmount(n) {

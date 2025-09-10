@@ -1167,8 +1167,126 @@ input[type="file"] {
 
 .breakdown-completed {
   font-size: 0.85rem;
-  color: #28a745;
+}
+
+/* Pie Chart Styles */
+.charts-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+/* Weekly charts container - 3 columns */
+.charts-container.weekly {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.chart-wrapper {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.chart-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 15px;
+}
+
+.chart-container {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+
+.chart-container canvas {
+  max-height: 300px;
+}
+
+.chart-legend {
+  margin-top: 15px;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.chart-total {
+  margin-top: 10px;
+  font-weight: 600;
+  color: #9534db;
+  font-size: 1.1rem;
+}
+
+/* Stats Controls Styles */
+.stats-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.date-range-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.quick-ranges {
+  display: flex;
+  gap: 5px;
+  margin-left: 10px;
+}
+
+.date-range-controls label {
   font-weight: 500;
+  color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+.date-range-controls input[type="date"] {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.date-range-controls input[type="date"]:focus {
+  outline: none;
+  border-color: #9534db;
+  box-shadow: 0 0 0 2px rgba(149, 52, 219, 0.2);
+}
+
+.filter-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.filter-btn.primary {
+  background-color: #9534db;
+  color: white;
+}
+
+.filter-btn.primary:hover {
+  background-color: #7c2db8;
+}
+
+.filter-btn.secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.filter-btn.secondary:hover {
+  background-color: #5a6268;
 }
 
 
