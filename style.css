@@ -98,6 +98,33 @@ button:hover {
   background-color: #f0f8ff;
 }
 
+/* Smooth transitions for appointment cards */
+.patient {
+  transition: opacity 0.4s ease, transform 0.4s ease, box-shadow 0.3s ease;
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+.patient.fade-out {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+}
+
+.patient.fade-in {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 input, select, textarea {
   width: 100%;
   padding: 10px;
@@ -170,6 +197,90 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
+}
+
+/* Accommodated appointments three-column layout */
+.accommodated-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.accommodated-column {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 2px solid #e9ecef;
+}
+
+.accommodated-column h3 {
+  text-align: center;
+  color: #495057;
+  margin-bottom: 15px;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.accommodated-column .appointments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.accommodated-column .appointments-list.loading {
+  opacity: 0.6;
+  transform: scale(0.98);
+}
+
+.accommodated-column .appointments-list.updating {
+  opacity: 0.7;
+  transform: scale(0.99);
+}
+
+/* Header controls layout */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+/* Refresh indicator */
+.refresh-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6c757d;
+  font-size: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.refresh-indicator.show {
+  opacity: 1;
+}
+
+.refresh-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e9ecef;
+  border-top: 2px solid #9534db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive design for accommodated columns */
+@media (max-width: 1200px) {
+  .accommodated-columns {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
 }
 
 /* Loading Bar */
@@ -954,6 +1065,112 @@ input[type="file"] {
   font-size: 0.9rem;
   margin-top: 5px;
 }
+
+/* Enhanced Stats Grid for Total Statistics */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.stat-card.primary {
+  border-left-color: #007bff;
+}
+
+.stat-card.primary .stat-number {
+  color: #007bff;
+}
+
+.stat-card.success {
+  border-left-color: #28a745;
+}
+
+.stat-card.success .stat-number {
+  color: #28a745;
+}
+
+.stat-card.warning {
+  border-left-color: #ffc107;
+}
+
+.stat-card.warning .stat-number {
+  color: #ffc107;
+}
+
+.stat-card.danger {
+  border-left-color: #dc3545;
+}
+
+.stat-card.danger .stat-number {
+  color: #dc3545;
+}
+
+.stat-card.info {
+  border-left-color: #17a2b8;
+}
+
+.stat-card.info .stat-number {
+  color: #17a2b8;
+}
+
+.stat-card.secondary {
+  border-left-color: #6c757d;
+}
+
+.stat-card.secondary .stat-number {
+  color: #6c757d;
+}
+
+/* Stats Breakdown Styles */
+.stats-breakdown {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.stats-breakdown h4 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+}
+
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.breakdown-item {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #9534db;
+}
+
+.breakdown-name {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 5px;
+}
+
+.breakdown-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.breakdown-total {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.breakdown-completed {
+  font-size: 0.85rem;
+  color: #28a745;
+  font-weight: 500;
+}
+
 
 /* Clinical Notes Styles */
 .clinical-notes {

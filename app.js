@@ -52,6 +52,36 @@ function formatTimeTo12Hr(timeStr) {
   return `${hour}:${minute} ${ampm}`;
 }
 
+// Date utility functions for Philippine timezone
+function getPhilippineDate() {
+  // Get current date in Philippine timezone (UTC+8)
+  const now = new Date();
+  const philippineTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Manila"}));
+  return philippineTime;
+}
+
+function formatDateForComparison(dateStr) {
+  // Convert date string (YYYY-MM-DD) to Date object
+  return new Date(dateStr + 'T00:00:00');
+}
+
+function getAppointmentCategory(appointmentDate) {
+  const today = getPhilippineDate();
+  const appointment = formatDateForComparison(appointmentDate);
+  
+  // Set time to start of day for comparison
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const appointmentStart = new Date(appointment.getFullYear(), appointment.getMonth(), appointment.getDate());
+  
+  if (appointmentStart.getTime() === todayStart.getTime()) {
+    return 'today';
+  } else if (appointmentStart.getTime() < todayStart.getTime()) {
+    return 'past';
+  } else {
+    return 'upcoming';
+  }
+}
+
 
 function showPage(page, options = {}) {
     document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
@@ -89,8 +119,71 @@ document.getElementById('sort-toggle').addEventListener('click', () => {
 
 window.toggleSortAccom = function () {
   sortDescAccom = !sortDescAccom;
-  document.getElementById('accom-sort-toggle').innerText = sortDescAccom ? 'Sort: Newest' : 'Sort: Oldest';
+  document.getElementById('accom-sort-toggle').innerText = sortDescAccom ? 'Sort: Latest Time' : 'Sort: Earliest Time';
   loadApprovedPatients();
+};
+
+// View upcoming appointment details
+window.viewUpcomingDetails = async function(app) {
+  const { name, address } = await getPatientInfo(app.user_id);
+  const time12Hr = formatTimeTo12Hr(app.time);
+  const specializationMap = await getSpecializationMap();
+  
+  const detailsHtml = `
+    <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 700px; margin: 20px auto;">
+      <h3 style="margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">Appointment Details</h3>
+      <div style="line-height: 1.6;">
+        <strong>Patient Name:</strong> ${app.patient_name}<br><br>
+        <strong>Patient Identity:</strong> ${app.patient_identity || 'N/A'}<br><br>
+        <strong>Address:</strong> <small style="font-size: 0.9rem;">${address || 'N/A'}</small><br><br>
+        <strong>Gender:</strong> ${app.patient_gender}<br><br>
+        <strong>Age:</strong> ${app.patient_age}<br><br>
+        <strong>Blood Type:</strong> ${app.blood_type || 'N/A'}<br><br>
+        <strong>Date:</strong> ${app.date}<br><br>
+        <strong>Time:</strong> ${time12Hr}<br><br>
+        <strong>Reason:</strong> ${app.reason}<br><br>
+        <strong>Doctor:</strong> ${app.doctors?.name || 'Unknown'}<br><br>
+        <strong>Specialization:</strong> ${specializationMap[app.specialization_id] || 'No specialization'}<br>
+      </div>
+      <div style="margin-top: 50px; text-align: center;">
+        <button onclick="closeUpcomingDetails()" style="background-color: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">Close</button>
+      </div>
+    </div>
+  `;
+  
+  // Create modal overlay
+  const modal = document.createElement('div');
+  modal.id = 'upcoming-details-modal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+  modal.innerHTML = detailsHtml;
+  
+  document.body.appendChild(modal);
+  
+  // Close modal when clicking outside
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) {
+      closeUpcomingDetails();
+    }
+  });
+};
+
+// Close upcoming details modal
+window.closeUpcomingDetails = function() {
+  const modal = document.getElementById('upcoming-details-modal');
+  if (modal) {
+    modal.remove();
+  }
 };
 
 async function getPatientInfo(user_id) {
@@ -109,6 +202,10 @@ async function getPatientInfo(user_id) {
 // Requests
 async function loadAppointments() {
   startLoadingBar();
+  
+  // Save current scroll position
+  const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+  
   const list = document.getElementById('appointments-list');
 
   const [appointmentsRes, doctorsRes] = await Promise.all([
@@ -160,6 +257,12 @@ async function loadAppointments() {
 
     list.appendChild(div);
   }
+  
+  // Restore scroll position after a short delay to ensure DOM is updated
+  setTimeout(() => {
+    window.scrollTo(0, scrollPosition);
+  }, 100);
+  
   finishLoadingBar();
 }
 
@@ -232,27 +335,98 @@ function confirmAndDecline(id) {
 // Accommodated
 async function loadApprovedPatients() {
   startLoadingBar();
-  const list = document.getElementById('accommodated-list');
+  
+  // Save current scroll position
+  const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+  
+  // Get the three column containers
+  const todayList = document.getElementById('accommodated-today');
+  const pastList = document.getElementById('accommodated-past');
+  const upcomingList = document.getElementById('accommodated-upcoming');
+  const refreshIndicator = document.getElementById('refresh-indicator');
+
+  // Show refresh indicator
+  if (refreshIndicator) {
+    refreshIndicator.style.display = 'flex';
+    setTimeout(() => refreshIndicator.classList.add('show'), 10);
+  }
+
+  // Add updating class for smooth transition
+  [todayList, pastList, upcomingList].forEach(list => {
+    list.classList.add('updating');
+  });
 
   const { data, error } = await supabase
     .from('appointments')
     .select('*, doctors(name)')
     .eq('clinic_id', clinicId)
     .eq('status', 'approved')
-    .order('created_at', { ascending: !sortDescAccom });
+    .order('date', { ascending: !sortDescAccom })
+    .order('time', { ascending: !sortDescAccom });
 
   if (error) {
-    list.innerHTML = 'Error loading data.';
+    todayList.innerHTML = 'Error loading data.';
+    pastList.innerHTML = 'Error loading data.';
+    upcomingList.innerHTML = 'Error loading data.';
+    [todayList, pastList, upcomingList].forEach(list => {
+      list.classList.remove('updating');
+    });
     finishLoadingBar();
     return;
   }
 
-  list.innerHTML = '';
+  // Smooth fade out existing content
+  [todayList, pastList, upcomingList].forEach(list => {
+    const existingPatients = list.querySelectorAll('.patient');
+    existingPatients.forEach(patient => {
+      patient.classList.add('fade-out');
+    });
+  });
+
+  // Wait for fade out animation to complete
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  // Clear all lists
+  todayList.innerHTML = '';
+  pastList.innerHTML = '';
+  upcomingList.innerHTML = '';
+
+  // Categorize appointments
+  const todayAppointments = [];
+  const pastAppointments = [];
+  const upcomingAppointments = [];
+
   for (const app of data) {
+    const category = getAppointmentCategory(app.date);
+    if (category === 'today') {
+      todayAppointments.push(app);
+    } else if (category === 'past') {
+      pastAppointments.push(app);
+    } else {
+      upcomingAppointments.push(app);
+    }
+  }
+
+  // Sort each category by time
+  const sortByTime = (a, b) => {
+    const timeA = a.time || '00:00';
+    const timeB = b.time || '00:00';
+    return sortDescAccom ? timeB.localeCompare(timeA) : timeA.localeCompare(timeB);
+  };
+
+  todayAppointments.sort(sortByTime);
+  pastAppointments.sort(sortByTime);
+  upcomingAppointments.sort(sortByTime);
+
+  // Populate today's appointments
+  for (let i = 0; i < todayAppointments.length; i++) {
+    const app = todayAppointments[i];
     const { name, gender } = await getPatientInfo(app.user_id);
     const time12Hr = formatTimeTo12Hr(app.time);
     const div = document.createElement('div');
     div.className = 'patient';
+    div.style.opacity = '0';
+    div.style.transform = 'translateY(20px)';
     div.innerHTML = `
       <strong>User: ${name}</strong><br>
       <strong>Patient Name: ${app.patient_name}</strong><br><br>
@@ -265,8 +439,95 @@ async function loadApprovedPatients() {
       Doctor: ${app.doctors?.name || 'Unknown'}<br>
       <button onclick='managePatient(${JSON.stringify(app)})'>Manage</button>
     `;
-    list.appendChild(div);
+    todayList.appendChild(div);
+    
+    // Staggered fade-in animation
+    setTimeout(() => {
+      div.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      div.style.opacity = '1';
+      div.style.transform = 'translateY(0)';
+    }, i * 100);
   }
+
+  // Populate past appointments
+  for (let i = 0; i < pastAppointments.length; i++) {
+    const app = pastAppointments[i];
+    const { name, gender } = await getPatientInfo(app.user_id);
+    const time12Hr = formatTimeTo12Hr(app.time);
+    const div = document.createElement('div');
+    div.className = 'patient';
+    div.style.opacity = '0';
+    div.style.transform = 'translateY(20px)';
+    div.innerHTML = `
+      <strong>User: ${name}</strong><br>
+      <strong>Patient Name: ${app.patient_name}</strong><br><br>
+      Gender: ${app.patient_gender}<br>
+      Age: ${app.patient_age}<br>
+      Blood Type: ${app.blood_type || 'N/A'}<br>
+      Date: ${app.date}<br>
+      Time: ${time12Hr}<br>
+      Reason: ${app.reason}<br>
+      Doctor: ${app.doctors?.name || 'Unknown'}<br>
+      <button onclick='managePatient(${JSON.stringify(app)})'>Manage</button>
+    `;
+    pastList.appendChild(div);
+    
+    // Staggered fade-in animation
+    setTimeout(() => {
+      div.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      div.style.opacity = '1';
+      div.style.transform = 'translateY(0)';
+    }, i * 100);
+  }
+
+   // Populate upcoming appointments
+   for (let i = 0; i < upcomingAppointments.length; i++) {
+     const app = upcomingAppointments[i];
+     const { name, gender } = await getPatientInfo(app.user_id);
+     const time12Hr = formatTimeTo12Hr(app.time);
+     const div = document.createElement('div');
+     div.className = 'patient';
+     div.style.opacity = '0';
+     div.style.transform = 'translateY(20px)';
+     div.innerHTML = `
+       <strong>User: ${name}</strong><br>
+       <strong>Patient Name: ${app.patient_name}</strong><br><br>
+       Gender: ${app.patient_gender}<br>
+       Age: ${app.patient_age}<br>
+       Blood Type: ${app.blood_type || 'N/A'}<br>
+       Date: ${app.date}<br>
+       Time: ${time12Hr}<br>
+       Reason: ${app.reason}<br>
+       Doctor: ${app.doctors?.name || 'Unknown'}<br>
+       <button onclick='viewUpcomingDetails(${JSON.stringify(app)})'>View Details</button>
+     `;
+     upcomingList.appendChild(div);
+     
+     // Staggered fade-in animation
+     setTimeout(() => {
+       div.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+       div.style.opacity = '1';
+       div.style.transform = 'translateY(0)';
+     }, i * 100);
+   }
+
+  // Remove updating class and finish loading
+  [todayList, pastList, upcomingList].forEach(list => {
+    list.classList.remove('updating');
+  });
+
+  // Hide refresh indicator
+  if (refreshIndicator) {
+    refreshIndicator.classList.remove('show');
+    setTimeout(() => {
+      refreshIndicator.style.display = 'none';
+    }, 300);
+  }
+
+  // Restore scroll position after a short delay to ensure DOM is updated
+  setTimeout(() => {
+    window.scrollTo(0, scrollPosition);
+  }, 100);
 
   finishLoadingBar();
 }
@@ -359,6 +620,23 @@ async function loadCompletedAppointments() {
   finishLoadingBar();
 }
 
+// Populate year dropdown for reports
+function populateYearDropdown() {
+  const yearSelect = document.getElementById('filter-year');
+  if (!yearSelect) return;
+  
+  const currentYear = new Date().getFullYear();
+  const startYear = currentYear - 5; // Show last 5 years
+  const endYear = currentYear + 1;   // Show next year
+  
+  for (let year = endYear; year >= startYear; year--) {
+    const option = document.createElement('option');
+    option.value = year;
+    option.textContent = year;
+    yearSelect.appendChild(option);
+  }
+}
+
 // Search filter for completed-list
 document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('patient-search');
@@ -372,6 +650,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+  
+  // Populate year dropdown when page loads
+  populateYearDropdown();
 });
 
 async function loadPatientDetails(userId, appointments) {
@@ -404,6 +685,21 @@ async function loadPatientDetails(userId, appointments) {
     supabase.from('prescriptions').select('*').eq('user_id', userId),
     supabase.from('billings').select('*').eq('user_id', userId)
   ]);
+
+  // Load prescription medicines for all prescriptions of this user
+  let prescriptionMedicines = [];
+  try {
+    const prescIds = (prescRes?.data || []).map(p => p.id);
+    if (prescIds.length > 0) {
+      const { data: medsData } = await supabase
+        .from('prescription_medicines')
+        .select('*')
+        .in('prescription_id', prescIds);
+      prescriptionMedicines = medsData || [];
+    }
+  } catch (e) {
+    prescriptionMedicines = [];
+  }
 
   // Load the full appointment history for this patient within this clinic (only completed appointments)
   let appsToRender = [];
@@ -447,6 +743,15 @@ async function loadPatientDetails(userId, appointments) {
 
   const patient = patientRes.data;
   const prescriptions = prescRes.data;
+  // Map prescription_id -> array of medicines
+  const prescIdToMeds = (function() {
+    const map = {};
+    for (const m of (prescriptionMedicines || [])) {
+      if (!map[m.prescription_id]) map[m.prescription_id] = [];
+      map[m.prescription_id].push(m);
+    }
+    return map;
+  })();
   const billings = billingRes.data;
 
   title.innerHTML = `
@@ -533,7 +838,15 @@ async function loadPatientDetails(userId, appointments) {
         <strong>Doctor:</strong><br>${app.doctors?.name || 'Unknown'}<br><br>
         <strong>Prescription:</strong><br>
         ${matchedPrescriptions.length
-          ? matchedPrescriptions.map(p => `${p.details}</div>`).join('<br>')
+          ? matchedPrescriptions.map(p => {
+              const meds = (prescIdToMeds[p.id] || []);
+              const medsList = meds.length
+                ? `<ul style="margin:6px 0 0 16px; padding:0;">${meds.map(m => `<li>${m.med_name}${m.dosage ? `, ${m.dosage}` : ''}${m.frequency ? `, ${m.frequency}` : ''}${m.duration ? `, ${m.duration}` : ''}${m.instructions ? `, ${m.instructions}` : ''}</li>`).join('')}</ul>`
+                : '<em>No medicines listed</em>';
+              const title = p.name ? `<div><strong>${p.name}</strong></div>` : '';
+              const details = p.details ? `<div>${p.details}</div>` : '';
+              return `<div>${title}${details}${medsList}</div>`;
+            }).join('<br>')
           : 'No prescription'}
       </div>
       <div>
@@ -651,6 +964,51 @@ async function saveVitalSigns() {
   }
 }
 
+function addMedicineRow() {
+  const list = document.getElementById('med-list');
+  if (!list) return;
+  const rowId = `med-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'med-row';
+  wrapper.style.marginBottom = '10px';
+  wrapper.innerHTML = `
+    <div class="form-row">
+      <label>Medicine Name</label>
+      <input type="text" class="med-name" placeholder="Medicine name" aria-label="Medicine name" />
+    </div>
+    <div class="form-row">
+      <label>Dosage</label>
+      <input type="text" class="med-dosage" placeholder="(e.g., 500 mg)" aria-label="Dosage" />
+    </div>
+    <div class="form-row">
+      <label>Frequency</label>
+      <input type="text" class="med-frequency" placeholder="(e.g., 2 times a day)" aria-label="Frequency" />
+    </div>
+    <div class="form-row">
+      <label>Duration</label>
+      <input type="text" class="med-duration" placeholder="(e.g., 7 days)" aria-label="Duration" />
+    </div>
+    <div class="form-row">
+      <label>Instructions</label>
+      <textarea class="med-instructions" rows="2" placeholder="(e.g., after meals)" aria-label="Instructions"></textarea>
+    </div>
+  `;
+  list.appendChild(wrapper);
+}
+
+function collectPrescriptionMedicines() {
+  const list = document.getElementById('med-list');
+  if (!list) return [];
+  const rows = Array.from(list.querySelectorAll('.med-row'));
+  return rows.map(r => ({
+    med_name: r.querySelector('.med-name')?.value?.trim() || '',
+    dosage: r.querySelector('.med-dosage')?.value?.trim() || null,
+    frequency: r.querySelector('.med-frequency')?.value?.trim() || null,
+    duration: r.querySelector('.med-duration')?.value?.trim() || null,
+    instructions: r.querySelector('.med-instructions')?.value?.trim() || null,
+  })).filter(m => m.med_name);
+}
+
 async function loadVitalSignsForAppointment(appointmentId, userId) {
   const target = document.getElementById(`vs-view-${appointmentId}`);
   if (!target) return;
@@ -759,10 +1117,15 @@ async function managePatient(app) {
     <div class="manage-columns">
       <div class="column">
         <h3>Prescription</h3>
-        <label>Medicine Name(s)</label>
-        <input type="text" id="presc-name" placeholder="Enter medicine(s) name" /> 
-        <label>Prescription Details</label>
-         <textarea id="presc-details" placeholder="Enter prescription details, dosage, instructions, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
+        <label>Prescription Name</label>
+        <input type="text" id="presc-name" placeholder="e.g., prescription for ...(reason)" /> 
+        <label>Prescription Details (summary)</label>
+         <textarea id="presc-details" placeholder="Enter summary details, overall instructions, etc." rows="4" style="width: 100%; resize: vertical; min-height: 80px;"></textarea>
+         <div id="presc-meds-section" style="margin-top:12px;">
+           <h4>Prescription Medicines</h4>
+           <div id="med-list"></div>
+           <button type="button" onclick="addMedicineRow()">+ Add another Medicine</button>
+         </div>
       </div>
       <div class="column">
          <h3>Doctor's Notes</h3>
@@ -819,12 +1182,12 @@ window.completeAppointment = async function() {
   }
 
      // Check if prescription, billing, and doctor's note are filled
-  const prescName = document.getElementById('presc-name')?.value.trim();
-  const prescDetails = document.getElementById('presc-details')?.value.trim();
-  const billingTitle = document.getElementById('billing-title')?.value.trim();
-  const billingAmount = document.getElementById('billing-amount')?.value.trim();
-  const billingDue = document.getElementById('billing-due')?.value.trim();
-  const noteContent = document.getElementById('doctors-note-input')?.value.trim();
+   const prescName = document.getElementById('presc-name')?.value.trim();
+   const prescDetails = document.getElementById('presc-details')?.value.trim();
+   const billingTitle = document.getElementById('billing-title')?.value.trim();
+   const billingAmount = document.getElementById('billing-amount')?.value.trim();
+   const billingDue = document.getElementById('billing-due')?.value.trim();
+   const noteContent = document.getElementById('doctors-note-input')?.value.trim();
 
   // For medical clinics, vital signs must be filled before completion
   let vitalsPayload = null;
@@ -865,11 +1228,11 @@ window.completeAppointment = async function() {
     }
   }
 
-  // Check if required fields are filled
-  if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent) {
-    alert("Please fill in prescription, billing, and doctor's note before completing the appointment.");
-    return;
-  }
+   // Check if required fields are filled
+   if (!prescName || !prescDetails || !billingTitle || !billingAmount || !billingDue || !noteContent) {
+     alert("Please fill in prescription, billing, and doctor's note before completing the appointment.");
+     return;
+   }
 
   // Confirm completion
   if (!confirm('Are you sure you want to complete this appointment? This will move it to the completed appointments history.')) {
@@ -970,8 +1333,8 @@ window.completeAppointment = async function() {
 
          // Execute remaining database operations
     const operations = [
-      supabase.from('doctor_notes').insert([doctorNote]),
-      supabase.from('prescriptions').insert([prescription]),
+       supabase.from('doctor_notes').insert([doctorNote]),
+       supabase.from('prescriptions').insert([prescription]),
       supabase.from('billings').insert([billing])
     ];
     if (isMedicalClinic && vitalsPayload) {
@@ -982,10 +1345,38 @@ window.completeAppointment = async function() {
     const results = await Promise.all(operations);
     const firstError = results.find(r => r && r.error);
     if (firstError && firstError.error) {
-      alert('Failed to complete appointment. Please try again.');
+       alert('Failed to complete appointment. Please try again.');
       console.error('Completion error:', firstError.error);
-      return;
-    }
+       return;
+     }
+
+    // If we have medicines, insert them referencing the created prescription id
+    if (collectPrescriptionMedicines().length > 0) {
+      // Fetch created prescription id by unique combo (latest for appointment)
+      const { data: prescRows } = await supabase
+        .from('prescriptions')
+        .select('id')
+        .eq('appointment_id', appointmentId)
+        .eq('clinic_id', clinicId)
+        .order('last_updated', { ascending: false })
+        .limit(1);
+      const prescId = prescRows && prescRows[0]?.id;
+      if (prescId) {
+        const medsPayload = collectPrescriptionMedicines().map(m => ({
+          prescription_id: prescId,
+          med_name: m.med_name,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          duration: m.duration,
+          instructions: m.instructions
+        }));
+        const { error: medsErr } = await supabase.from('prescription_medicines').insert(medsPayload);
+        if (medsErr) {
+          console.error('Failed to insert prescription medicines:', medsErr);
+          alert('Prescription saved, but medicines failed to save.');
+        }
+      }
+     }
 
     // Success - show confirmation and redirect
     alert('Appointment completed successfully! The patient has been moved to completed appointments.');
@@ -1134,7 +1525,7 @@ setInterval(() => {
   const current = document.querySelector('.page:not([style*="display: none"])');
   if (current?.id === 'requests') loadAppointments();
   if (current?.id === 'accommodated') loadApprovedPatients();
-}, 10000);
+}, 30000);
 
 // Doctor Management Functions
 async function loadDoctors() {
@@ -1797,16 +2188,16 @@ window.saveSimpleSchedule = async function() {
     if (targetDates.length > 0) {
       for (const d of targetDates) {
         const { error: delErr } = await supabase
-          .from('clinic_schedules')
-          .delete()
-          .eq('doctors_id', doctorId)
+      .from('clinic_schedules')
+        .delete()
+        .eq('doctors_id', doctorId)
           .eq('available_time', start)
           .eq('date', d);
         if (delErr) {
           alert('Failed to clear existing slots for some dates.');
           console.error(delErr);
-    return;
-  }
+      return;
+    }
       }
     } else {
       // No targetDates implies weekly pattern without date window (unlikely path)
@@ -2120,12 +2511,12 @@ async function showCalendarAppointmentsWindow(dateStr, appointments) {
   
   windowElement.innerHTML = `
     <div class="calendar-appointments-modal">
-      <div class="calendar-appointments-header">
-        <h3>Appointments for ${dateDisplay}</h3>
-        <button class="close-btn" onclick="hideCalendarAppointmentsWindow()">×</button>
-      </div>
-      <div class="calendar-appointments-content">
-        ${appointmentsList}
+    <div class="calendar-appointments-header">
+      <h3>Appointments for ${dateDisplay}</h3>
+      <button class="close-btn" onclick="hideCalendarAppointmentsWindow()">×</button>
+    </div>
+    <div class="calendar-appointments-content">
+      ${appointmentsList}
       </div>
     </div>
   `;
@@ -2163,10 +2554,198 @@ window.hideCalendarAppointmentsWindow = function() {
 window.generateReport = async function() {
   const reportDate = document.getElementById('report-date').value || new Date().toISOString().split('T')[0];
   const doctorFilter = document.getElementById('report-doctor-filter').value;
+  const filterMonth = document.getElementById('filter-month').value;
+  const filterYear = document.getElementById('filter-year').value;
   
+  // Determine matrix dates based on filters
+  let monthlyAnchor = reportDate;
+  let annualAnchor = reportDate;
+  
+  if (filterMonth && filterYear) {
+    monthlyAnchor = `${filterYear}-${filterMonth}-01`;
+    annualAnchor = `${filterYear}-01-01`;
+  } else if (filterYear) {
+    annualAnchor = `${filterYear}-01-01`;
+  } else if (filterMonth) {
+    const currentYear = new Date().getFullYear();
+    monthlyAnchor = `${currentYear}-${filterMonth}-01`;
+  }
+  
+  await loadTotalAppointmentStats(doctorFilter);
   await loadDailyStats(reportDate, doctorFilter);
   await loadDoctorReports(reportDate, doctorFilter);
+  await loadSalesMonthly(monthlyAnchor);
+  await loadSalesAnnual(annualAnchor);
+  await loadAppointmentsMonthlyMatrix(monthlyAnchor);
+  await loadAppointmentsAnnualMatrix(annualAnchor);
 };
+
+async function loadTotalAppointmentStats(doctorFilter = '') {
+  try {
+    const statsContainer = document.getElementById('total-stats');
+    const periodDisplay = document.getElementById('total-stats-period');
+    
+    // Build query for all appointments
+    let query = supabase
+      .from('appointments')
+      .select('*, doctors(name), specializations(name)')
+      .eq('clinic_id', clinicId);
+    
+    // Apply doctor filter if specified
+    if (doctorFilter) {
+      query = query.eq('doctors.name', doctorFilter);
+    }
+    
+    const { data: appointments, error } = await query;
+    
+    if (error) {
+      console.error('Error loading total appointment stats:', error);
+      statsContainer.innerHTML = '<p>Error loading statistics</p>';
+      return;
+    }
+    
+    const allAppointments = appointments || [];
+    
+    // Calculate comprehensive statistics
+    const totalAppointments = allAppointments.length;
+    const completedAppointments = allAppointments.filter(apt => apt.status === 'completed').length;
+    const pendingAppointments = allAppointments.filter(apt => apt.status === 'pending').length;
+    const declinedAppointments = allAppointments.filter(apt => apt.status === 'declined').length;
+    const cancelledAppointments = allAppointments.filter(apt => apt.status === 'cancelled').length;
+    
+    // Calculate completion rate
+    const completionRate = totalAppointments > 0 ? ((completedAppointments / totalAppointments) * 100).toFixed(1) : 0;
+    
+    // Group by specialization
+    const specializationStats = {};
+    allAppointments.forEach(apt => {
+      const specName = apt.specializations?.name || 'No Specialization';
+      if (!specializationStats[specName]) {
+        specializationStats[specName] = { total: 0, completed: 0 };
+      }
+      specializationStats[specName].total++;
+      if (apt.status === 'completed') {
+        specializationStats[specName].completed++;
+      }
+    });
+    
+    // Group by doctor
+    const doctorStats = {};
+    allAppointments.forEach(apt => {
+      const doctorName = apt.doctors?.name || 'Unassigned';
+      if (!doctorStats[doctorName]) {
+        doctorStats[doctorName] = { total: 0, completed: 0 };
+      }
+      doctorStats[doctorName].total++;
+      if (apt.status === 'completed') {
+        doctorStats[doctorName].completed++;
+      }
+    });
+    
+    
+    // Build HTML
+    let html = `
+      <div class="stats-grid">
+        <div class="stat-card primary">
+          <div class="stat-number">${totalAppointments}</div>
+          <div class="stat-label">Total Appointments</div>
+        </div>
+        <div class="stat-card success">
+          <div class="stat-number">${completedAppointments}</div>
+          <div class="stat-label">Completed</div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-number">${pendingAppointments}</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat-card danger">
+          <div class="stat-number">${declinedAppointments}</div>
+          <div class="stat-label">Declined</div>
+        </div>
+        <div class="stat-card info">
+          <div class="stat-number">${completionRate}%</div>
+          <div class="stat-label">Completion Rate</div>
+        </div>
+        <div class="stat-card secondary">
+          <div class="stat-number">${cancelledAppointments}</div>
+          <div class="stat-label">Cancelled</div>
+        </div>
+      </div>
+    `;
+    
+    // Add specialization breakdown
+    if (Object.keys(specializationStats).length > 0) {
+      html += `
+        <div class="stats-breakdown">
+          <h4>By Specialization</h4>
+          <div class="breakdown-grid">
+      `;
+      
+      Object.entries(specializationStats)
+        .sort((a, b) => b[1].total - a[1].total)
+        .forEach(([spec, stats]) => {
+          const completionRate = stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(1) : 0;
+          html += `
+            <div class="breakdown-item">
+              <div class="breakdown-name">${spec}</div>
+              <div class="breakdown-stats">
+                <span class="breakdown-total">${stats.total} total</span>
+                <span class="breakdown-completed">${stats.completed} completed (${completionRate}%)</span>
+              </div>
+            </div>
+          `;
+        });
+      
+      html += `
+          </div>
+        </div>
+      `;
+    }
+    
+    // Add doctor breakdown
+    if (Object.keys(doctorStats).length > 0) {
+      html += `
+        <div class="stats-breakdown">
+          <h4>By Doctor</h4>
+          <div class="breakdown-grid">
+      `;
+      
+      Object.entries(doctorStats)
+        .sort((a, b) => b[1].total - a[1].total)
+        .forEach(([doctor, stats]) => {
+          const completionRate = stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(1) : 0;
+          html += `
+            <div class="breakdown-item">
+              <div class="breakdown-name">${doctor}</div>
+              <div class="breakdown-stats">
+                <span class="breakdown-total">${stats.total} total</span>
+                <span class="breakdown-completed">${stats.completed} completed (${completionRate}%)</span>
+              </div>
+            </div>
+          `;
+        });
+      
+      html += `
+          </div>
+        </div>
+      `;
+    }
+    
+    
+    statsContainer.innerHTML = html;
+    
+    // Update period display
+    if (doctorFilter) {
+      periodDisplay.textContent = `Filtered by: ${doctorFilter}`;
+    } else {
+      periodDisplay.textContent = 'All Time';
+    }
+    
+  } catch (error) {
+    console.error('Error in loadTotalAppointmentStats:', error);
+    document.getElementById('total-stats').innerHTML = '<p>Error loading total statistics</p>';
+  }
+}
 
 async function loadDailyStats(date, doctorFilter = '') {
   let query = supabase
@@ -2211,6 +2790,470 @@ async function loadDailyStats(date, doctorFilter = '') {
   `;
 }
 
+// Sales Reports (Monthly and Annual)
+async function loadSalesMonthly(reportDate) {
+  try {
+    const root = ensureSalesContainers();
+    const container = root.monthly;
+    const d = new Date(reportDate + 'T00:00:00');
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const start = new Date(year, month, 1).toISOString().split('T')[0];
+    const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+    const [{ data: billings }, { data: appts }, specializationMap] = await Promise.all([
+      supabase
+        .from('billings')
+        .select('id, amount, due_date, status, appointment_id')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'paid')
+        .gte('due_date', start)
+        .lte('due_date', end),
+      supabase
+        .from('appointments')
+        .select('id, date, specialization_id, doctors(name)')
+        .eq('clinic_id', clinicId)
+        .gte('date', start)
+        .lte('date', end),
+      getSpecializationMap()
+    ]);
+
+    const apptById = new Map((appts || []).map(a => [a.id, a]));
+
+    // Aggregate by date + specialization + doctor
+    const rows = [];
+    for (const b of (billings || [])) {
+      const a = apptById.get(b.appointment_id);
+      if (!a) continue;
+      const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+      const dateKey = a.date || b.due_date || start;
+      const doctorName = (a.doctors && a.doctors.name) ? a.doctors.name : 'Unassigned';
+      rows.push({ date: dateKey, specialization: specName, doctor: doctorName, amount: Number(b.amount) || 0 });
+    }
+
+    const grouped = new Map();
+    for (const r of rows) {
+      const key = `${r.date}|${r.specialization}|${r.doctor}`;
+      grouped.set(key, (grouped.get(key) || 0) + r.amount);
+    }
+
+    // Build table
+    const sortedKeys = Array.from(grouped.keys()).sort((k1, k2) => {
+      const [d1, s1, dr1] = k1.split('|');
+      const [d2, s2, dr2] = k2.split('|');
+      return d1.localeCompare(d2) || s1.localeCompare(s2) || dr1.localeCompare(dr2);
+    });
+
+    let total = 0;
+    const rowsHtml = sortedKeys.map(k => {
+      const [dateStr, spec, doc] = k.split('|');
+      const amt = grouped.get(k) || 0;
+      total += amt;
+      return `<tr><td>${dateStr}</td><td>${spec}</td><td>${doc}</td><td style="text-align:right;">₱${formatAmount(amt)}</td></tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Monthly Sales (by Date, Specialization & Doctor)</h3>
+          <span>${new Date(year, month, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span>
+        </div>
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Date</th>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Specialization</th>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Doctor</th>
+              <th style="text-align:right; border-bottom:1px solid #e9ecef; padding:8px;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || '<tr><td colspan="4" style="padding:8px; color:#6c757d;">No paid billings for this month.</td></tr>'}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="text-align:right; padding:8px; font-weight:600;">Total</td>
+              <td style="text-align:right; padding:8px; font-weight:600;">₱${formatAmount(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    console.error('loadSalesMonthly error:', e);
+  }
+}
+
+async function loadSalesAnnual(reportDate) {
+  try {
+    const root = ensureSalesContainers();
+    const container = root.annual;
+    const d = new Date(reportDate + 'T00:00:00');
+    const year = d.getFullYear();
+    const start = new Date(year, 0, 1).toISOString().split('T')[0];
+    const end = new Date(year, 11, 31).toISOString().split('T')[0];
+
+    const [{ data: billings }, { data: appts }, specializationMap] = await Promise.all([
+      supabase
+        .from('billings')
+        .select('id, amount, due_date, status, appointment_id')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'paid')
+        .gte('due_date', start)
+        .lte('due_date', end),
+      supabase
+        .from('appointments')
+        .select('id, date, specialization_id, doctors(name)')
+        .eq('clinic_id', clinicId)
+        .gte('date', start)
+        .lte('date', end),
+      getSpecializationMap()
+    ]);
+
+    const apptById = new Map((appts || []).map(a => [a.id, a]));
+
+    // Aggregate by month + specialization + doctor
+    const rows = [];
+    for (const b of (billings || [])) {
+      const a = apptById.get(b.appointment_id);
+      if (!a) continue;
+      const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+      const dateKey = a.date || b.due_date || start;
+      const dt = new Date(dateKey + 'T00:00:00');
+      const monthKey = `${year}-${String(dt.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+      const doctorName = (a.doctors && a.doctors.name) ? a.doctors.name : 'Unassigned';
+      rows.push({ month: monthKey, specialization: specName, doctor: doctorName, amount: Number(b.amount) || 0 });
+    }
+
+    const grouped = new Map();
+    for (const r of rows) {
+      const key = `${r.month}|${r.specialization}|${r.doctor}`;
+      grouped.set(key, (grouped.get(key) || 0) + r.amount);
+    }
+
+    const sortedKeys = Array.from(grouped.keys()).sort((k1, k2) => {
+      const [m1, s1, dr1] = k1.split('|');
+      const [m2, s2, dr2] = k2.split('|');
+      return m1.localeCompare(m2) || s1.localeCompare(s2) || dr1.localeCompare(dr2);
+    });
+
+    let total = 0;
+    const rowsHtml = sortedKeys.map(k => {
+      const [monthStr, spec, doc] = k.split('|');
+      const amt = grouped.get(k) || 0;
+      total += amt;
+      const pretty = new Date(monthStr + '-01T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      return `<tr><td>${pretty}</td><td>${spec}</td><td>${doc}</td><td style="text-align:right;">₱${formatAmount(amt)}</td></tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Annual Sales (by Month, Specialization & Doctor)</h3>
+          <span>${year}</span>
+        </div>
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Month</th>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Specialization</th>
+              <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Doctor</th>
+              <th style="text-align:right; border-bottom:1px solid #e9ecef; padding:8px;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || '<tr><td colspan="4" style="padding:8px; color:#6c757d;">No paid billings for this year.</td></tr>'}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="text-align:right; padding:8px; font-weight:600;">Total</td>
+              <td style="text-align:right; padding:8px; font-weight:600;">₱${formatAmount(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    console.error('loadSalesAnnual error:', e);
+  }
+}
+
+function ensureSalesContainers() {
+  const reportsPage = document.getElementById('reports');
+  let monthly = document.getElementById('sales-monthly');
+  let annual = document.getElementById('sales-annual');
+  if (!monthly) {
+    monthly = document.createElement('div');
+    monthly.id = 'sales-monthly';
+    reportsPage.appendChild(monthly);
+  }
+  if (!annual) {
+    annual = document.createElement('div');
+    annual.id = 'sales-annual';
+    reportsPage.appendChild(annual);
+  }
+  return { monthly, annual };
+}
+
+function formatAmount(n) {
+  try { return (Number(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); } catch { return String(n); }
+}
+
+// Appointment Matrices (Monthly and Annual)
+async function loadAppointmentsMonthlyMatrix(reportDate) {
+  try {
+    const root = ensureAppointmentMatrixContainers();
+    const container = root.monthly;
+    const d = new Date(reportDate + 'T00:00:00');
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const start = new Date(year, month, 1).toISOString().split('T')[0];
+    const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+    const [{ data: appts }, specializationMap] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('id, date, time, patient_name, specialization_id, doctors(name)')
+        .eq('clinic_id', clinicId)
+        .gte('date', start)
+        .lte('date', end),
+      getSpecializationMap()
+    ]);
+
+    const specs = Array.from(new Set((appts || []).map(a => specializationMap[a.specialization_id] || 'Uncategorized'))).sort();
+
+    // date -> spec -> entries[]
+    const byDateSpec = new Map();
+    for (const a of (appts || [])) {
+      const dateKey = a.date;
+      const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+      const doctorName = a.doctors?.name || 'Unknown';
+      const time12 = formatTimeTo12Hr(a.time);
+      const line = `${time12} - Patient: ${a.patient_name || 'N/A'} | Doctor: ${doctorName}`;
+      if (!byDateSpec.has(dateKey)) byDateSpec.set(dateKey, new Map());
+      const inner = byDateSpec.get(dateKey);
+      if (!inner.has(specName)) inner.set(specName, []);
+      inner.get(specName).push(line);
+    }
+
+    const sortedDates = Array.from(byDateSpec.keys()).sort();
+
+    const headerCells = specs.map(s => `<th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">${s}</th>`).join('');
+    const bodyRows = sortedDates.map(dateStr => {
+      const inner = byDateSpec.get(dateStr);
+      const cells = specs.map(s => {
+        const lines = inner.get(s) || [];
+        const content = lines.length ? `<ul style=\"margin:0; padding-left:16px;\">${lines.map(l => `<li>${l}</li>`).join('')}</ul>` : '<span style="color:#6c757d;">—</span>';
+        return `<td style="vertical-align:top; padding:8px;">${content}</td>`;
+      }).join('');
+      return `<tr><td style="padding:8px; white-space:nowrap;">${dateStr}</td>${cells}</tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Monthly Appointment Matrix</h3>
+          <span>${new Date(year, month, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span>
+        </div>
+        <div style="overflow:auto;">
+          <table style="width:100%; border-collapse: collapse; min-width: 720px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Date</th>
+                ${headerCells}
+              </tr>
+            </thead>
+            <tbody>
+              ${bodyRows || `<tr><td colspan="${1 + specs.length}" style="padding:8px; color:#6c757d;">No appointments this month.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.error('loadAppointmentsMonthlyMatrix error:', e);
+  }
+}
+
+async function loadAppointmentsAnnualMatrix(reportDate) {
+  try {
+    const root = ensureAppointmentMatrixContainers();
+    const container = root.annual;
+    const d = new Date(reportDate + 'T00:00:00');
+    const year = d.getFullYear();
+    const start = new Date(year, 0, 1).toISOString().split('T')[0];
+    const end = new Date(year, 11, 31).toISOString().split('T')[0];
+
+    const [{ data: appts }, specializationMap] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('id, date, time, patient_name, specialization_id, doctors(name)')
+        .eq('clinic_id', clinicId)
+        .gte('date', start)
+        .lte('date', end),
+      getSpecializationMap()
+    ]);
+
+    const specs = Array.from(new Set((appts || []).map(a => specializationMap[a.specialization_id] || 'Uncategorized'))).sort();
+
+    // month -> spec -> entries[]
+    const byMonthSpec = new Map();
+    for (const a of (appts || [])) {
+      const dt = new Date(a.date + 'T00:00:00');
+      const monthKey = `${year}-${String(dt.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+      const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+      const doctorName = a.doctors?.name || 'Unknown';
+      const time12 = formatTimeTo12Hr(a.time);
+      const line = `${a.date} ${time12} - Patient: ${a.patient_name || 'N/A'} | Doctor: ${doctorName}`;
+      if (!byMonthSpec.has(monthKey)) byMonthSpec.set(monthKey, new Map());
+      const inner = byMonthSpec.get(monthKey);
+      if (!inner.has(specName)) inner.set(specName, []);
+      inner.get(specName).push(line);
+    }
+
+    const sortedMonths = Array.from(byMonthSpec.keys()).sort();
+
+    const headerCells = specs.map(s => `<th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">${s}</th>`).join('');
+    const bodyRows = sortedMonths.map(mKey => {
+      const inner = byMonthSpec.get(mKey);
+      const pretty = new Date(mKey + '-01T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const cells = specs.map(s => {
+        const lines = inner.get(s) || [];
+        const content = lines.length ? `<ul style=\"margin:0; padding-left:16px;\">${lines.map(l => `<li>${l}</li>`).join('')}</ul>` : '<span style="color:#6c757d;">—</span>';
+        return `<td style="vertical-align:top; padding:8px;">${content}</td>`;
+      }).join('');
+      return `<tr><td style="padding:8px; white-space:nowrap;">${pretty}</td>${cells}</tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Annual Appointment Matrix</h3>
+          <span>${year}</span>
+        </div>
+        <div style="overflow:auto;">
+          <table style="width:100%; border-collapse: collapse; min-width: 720px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; border-bottom:1px solid #e9ecef; padding:8px;">Month</th>
+                ${headerCells}
+              </tr>
+            </thead>
+            <tbody>
+              ${bodyRows || `<tr><td colspan="${1 + specs.length}" style="padding:8px; color:#6c757d;">No appointments this year.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    console.error('loadAppointmentsAnnualMatrix error:', e);
+  }
+}
+
+function ensureAppointmentMatrixContainers() {
+  const reportsPage = document.getElementById('reports');
+  let monthly = document.getElementById('appointments-monthly-matrix');
+  let annual = document.getElementById('appointments-annual-matrix');
+  if (!monthly) {
+    monthly = document.createElement('div');
+    monthly.id = 'appointments-monthly-matrix';
+    reportsPage.appendChild(monthly);
+  }
+  if (!annual) {
+    annual = document.createElement('div');
+    annual.id = 'appointments-annual-matrix';
+    reportsPage.appendChild(annual);
+  }
+  return { monthly, annual };
+}
+
+// Builders to generate Excel-ready AOAs for matrices
+async function buildMonthlyAppointmentMatrixAOA(reportDate) {
+  const d = new Date(reportDate + 'T00:00:00');
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const start = new Date(year, month, 1).toISOString().split('T')[0];
+  const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+  const [{ data: appts }, specializationMap] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('id, date, time, patient_name, specialization_id, doctors(name)')
+      .eq('clinic_id', clinicId)
+      .gte('date', start)
+      .lte('date', end),
+    getSpecializationMap()
+  ]);
+
+  const specs = Array.from(new Set((appts || []).map(a => specializationMap[a.specialization_id] || 'Uncategorized'))).sort();
+  const byDateSpec = new Map();
+  for (const a of (appts || [])) {
+    const dateKey = a.date;
+    const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+    const doctorName = a.doctors?.name || 'Unknown';
+    const time12 = formatTimeTo12Hr(a.time);
+    const line = `${time12} - Patient: ${a.patient_name || 'N/A'} | Doctor: ${doctorName}`;
+    if (!byDateSpec.has(dateKey)) byDateSpec.set(dateKey, new Map());
+    const inner = byDateSpec.get(dateKey);
+    if (!inner.has(specName)) inner.set(specName, []);
+    inner.get(specName).push(line);
+  }
+
+  const sortedDates = Array.from(byDateSpec.keys()).sort();
+  const header = ['Date', ...specs];
+  const aoa = [header];
+  for (const dateStr of sortedDates) {
+    const inner = byDateSpec.get(dateStr);
+    const row = [dateStr, ...specs.map(s => (inner.get(s) || []).join('\n'))];
+    aoa.push(row);
+  }
+  return { aoa, specs };
+}
+
+async function buildAnnualAppointmentMatrixAOA(reportDate) {
+  const d = new Date(reportDate + 'T00:00:00');
+  const year = d.getFullYear();
+  const start = new Date(year, 0, 1).toISOString().split('T')[0];
+  const end = new Date(year, 11, 31).toISOString().split('T')[0];
+
+  const [{ data: appts }, specializationMap] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('id, date, time, patient_name, specialization_id, doctors(name)')
+      .eq('clinic_id', clinicId)
+      .gte('date', start)
+      .lte('date', end),
+    getSpecializationMap()
+  ]);
+
+  const specs = Array.from(new Set((appts || []).map(a => specializationMap[a.specialization_id] || 'Uncategorized'))).sort();
+  const byMonthSpec = new Map();
+  for (const a of (appts || [])) {
+    const dt = new Date(a.date + 'T00:00:00');
+    const monthKey = `${year}-${String(dt.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+    const specName = specializationMap[a.specialization_id] || 'Uncategorized';
+    const doctorName = a.doctors?.name || 'Unknown';
+    const time12 = formatTimeTo12Hr(a.time);
+    const line = `${a.date} ${time12} - Patient: ${a.patient_name || 'N/A'} | Doctor: ${doctorName}`;
+    if (!byMonthSpec.has(monthKey)) byMonthSpec.set(monthKey, new Map());
+    const inner = byMonthSpec.get(monthKey);
+    if (!inner.has(specName)) inner.set(specName, []);
+    inner.get(specName).push(line);
+  }
+
+  const sortedMonths = Array.from(byMonthSpec.keys()).sort();
+  const header = ['Month', ...specs];
+  const aoa = [header];
+  for (const mKey of sortedMonths) {
+    const inner = byMonthSpec.get(mKey);
+    const pretty = new Date(mKey + '-01T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const row = [pretty, ...specs.map(s => (inner.get(s) || []).join('\n'))];
+    aoa.push(row);
+  }
+  return { aoa, specs };
+}
+
 async function loadDoctorReports(date, doctorFilter = '') {
   const doctors = await getDoctorsForDropdown();
   const reportsContainer = document.getElementById('doctor-reports');
@@ -2252,69 +3295,30 @@ async function loadDoctorReports(date, doctorFilter = '') {
 
 window.exportReport = function() {
   const reportDate = document.getElementById('report-date').value || new Date().toISOString().split('T')[0];
-  const doctorFilter = document.getElementById('report-doctor-filter').value;
-
+  const monthInput = document.getElementById('matrix-month')?.value; // YYYY-MM
+  const yearInput = document.getElementById('matrix-year')?.value; // YYYY
   (async () => {
-    let query = supabase
-      .from('appointments')
-      .select('id, date, time, status, reason, patient_name, doctors(name)')
-      .eq('clinic_id', clinicId)
-      .eq('date', reportDate);
-    if (doctorFilter) {
-      query = query.eq('doctors.name', doctorFilter);
+    const XLSXLib = window.XLSX;
+    if (!XLSXLib) {
+      alert('Excel library not loaded. Please check your internet connection.');
+      return;
     }
-    const { data: appts } = await query;
 
-    const now = new Date();
-    const genDate = now.toLocaleDateString('en-US');
-    const genTime = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    // Build AOAs for monthly and annual matrices
+    const monthlyAnchor = monthInput ? monthInput + '-01' : reportDate;
+    const annualAnchor = yearInput ? yearInput + '-01-01' : reportDate;
+    const monthly = await buildMonthlyAppointmentMatrixAOA(monthlyAnchor);
+    const annual = await buildAnnualAppointmentMatrixAOA(annualAnchor);
 
-    const total = (appts || []).length;
-    const detailBlocks = (appts || []).map(a => {
-      const t12 = formatTimeTo12Hr(a.time);
-      const docName = a.doctors?.name || 'Unknown';
-      const patient = a.patient_name || 'N/A';
-      const status = a.status || 'N/A';
-      const reason = a.reason || '';
-      return `
-${patient}
-Doctor: ${docName}
-Time Schedule: ${t12}
-status: ${status}
-Reason: ${reason}
-`;
-    }).join('');
+    const wb = XLSXLib.utils.book_new();
+    const wsMonth = XLSXLib.utils.aoa_to_sheet(monthly.aoa);
+    const wsYear = XLSXLib.utils.aoa_to_sheet(annual.aoa);
 
-    const textContent = `Clinic Report for ${reportDate}
-Generated on ${genDate}, ${genTime}
+    XLSXLib.utils.book_append_sheet(wb, wsMonth, 'Monthly Matrix');
+    XLSXLib.utils.book_append_sheet(wb, wsYear, 'Annual Matrix');
 
-Total Appointments of the day: ${total}
-${detailBlocks}`;
-
-    // Build a printable HTML and trigger print (user can Save as PDF)
-    const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Clinic Report ${reportDate}</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; white-space: pre-wrap; font-size: 12pt; }
-  .header { margin-bottom: 12px; }
-  .block { margin: 10px 0; }
-</style>
-</head>
-<body>
-${textContent.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-</body>
-</html>`;
-
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => { try { w.print(); } catch (_) {} }, 300);
+    const fileName = `Clinic_Appointments_Matrix_${reportDate}.xlsx`;
+    XLSXLib.writeFile(wb, fileName);
   })();
 };
 
@@ -2590,6 +3594,7 @@ window.confirmAndDecline = confirmAndDecline;
 window.updateAppointmentStatus = updateAppointmentStatus;
 window.uploadLabResult = uploadLabResult;
 window.saveVitalSigns = saveVitalSigns;
+window.addMedicineRow = addMedicineRow;
 
 // Update billing status in database
 window.updateBillingStatus = async function() {

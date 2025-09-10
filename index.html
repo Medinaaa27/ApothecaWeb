@@ -6,6 +6,7 @@
   <title>Appointments Dashboard</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" type="image/png" href="apotheca_icon.png"/>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -46,9 +47,28 @@
     <div id="accommodated" class="page">
       <div class="appointments-header">   
         <h2>Accommodated Appointments</h2>
-        <button id="accom-sort-toggle" onclick="toggleSortAccom()">Sort: Newest</button>
+        <div class="header-controls">
+          <div id="refresh-indicator" class="refresh-indicator" style="display: none;">
+            <span class="refresh-spinner"></span>
+            <span>Updating...</span>
+          </div>
+          <button id="accom-sort-toggle" onclick="toggleSortAccom()">Sort: Latest Time</button>
+        </div>
       </div>
-      <div id="accommodated-list" class="appointments-list"></div>
+      <div class="accommodated-columns">
+        <div class="accommodated-column">
+          <h3>Today's Appointments</h3>
+          <div id="accommodated-today" class="appointments-list"></div>
+        </div>
+        <div class="accommodated-column">
+          <h3>Past Appointments</h3>
+          <div id="accommodated-past" class="appointments-list"></div>
+        </div>
+        <div class="accommodated-column">
+          <h3>Upcoming Appointments</h3>
+          <div id="accommodated-upcoming" class="appointments-list"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Details Page -->
@@ -264,10 +284,41 @@
           <select id="report-doctor-filter">
             <option value="">All Doctors</option>
           </select>
+          <span style="margin-left:8px;">Filter Month:</span>
+          <select id="filter-month">
+            <option value="">All Months</option>
+            <option value="01">January</option>
+            <option value="02">February</option>
+            <option value="03">March</option>
+            <option value="04">April</option>
+            <option value="05">May</option>
+            <option value="06">June</option>
+            <option value="07">July</option>
+            <option value="08">August</option>
+            <option value="09">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
+          <span style="margin-left:8px;">Filter Year:</span>
+          <select id="filter-year">
+            <option value="">All Years</option>
+          </select>
           <button onclick="generateReport()">Generate Report</button>
         </div>
       </div>
       
+      <!-- Total Appointments Statistics -->
+      <div class="report-container">
+        <div class="report-header">
+          <h3>Total Appointments Statistics</h3>
+          <span id="total-stats-period">All Time</span>
+        </div>
+        <div id="total-stats" class="report-stats">
+          <!-- Total stats will be populated by JavaScript -->
+        </div>
+      </div>
+
       <!-- Daily Statistics -->
       <div class="report-container">
         <div class="report-header">
